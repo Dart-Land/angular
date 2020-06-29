@@ -8,12 +8,20 @@ import 'package:angular/src/compiler/output/output_ast.dart' as o;
 /// the actual resolution from view compiler backend.
 abstract class ProviderSource {
   final CompileTokenMetadata token;
-  final bool eager;
-  final bool multiProvider;
 
-  ProviderSource(this.token, {this.eager, this.multiProvider});
+  ProviderSource(this.token);
 
+  /// Returns a reference to this provider instance.
   o.Expression build();
+
+  /// Returns a reference to this provider's `ChangeDetectorRef`, if necessary.
+  ///
+  /// Returns a non-null result only if this provider instance is a component
+  /// that uses `ChangeDetectionStrategy.OnPush`. This result is used to
+  /// implement `ChangeDetectorRef.markChildForCheck()`.
+  ///
+  /// Returns null otherwise.
+  o.Expression buildChangeDetectorRef() => null;
 
   /// Whether a dynamic `injectorGet(...)` is required to resolve this provider.
   ///
@@ -22,5 +30,5 @@ abstract class ProviderSource {
   ///   // DependencyService is dynamically required to resolve MyService.
   ///   _MyService = MyService(injectorGet(DependencyService));
   /// ```
-  bool get hasDynamicDependencies;
+  bool get hasDynamicDependencies => false;
 }

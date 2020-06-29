@@ -5,6 +5,9 @@
 language: dart
 
 dart:
+  # Normally we want `dev`, but the latest dev release (2.5.0-dev.2.1) does not work
+  # while the stable (2.5.0) does. We will move back to `dev` once we have a 2.6.0-dev
+  # that we want to test.
   - stable
 
 # Gives more resources on Travis (8GB Ram, 2CPUs).
@@ -40,14 +43,16 @@ stages:
   #- deploying
 
 jobs:
-  # Both of these packages have external dependencies that will not always
+  # All of these packages have external dependencies that will not always
   # pass at MASTER/HEAD for our mono repository. It's OK for these to fail and
   # not block the build.
   #
   # See https://github.com/dart-lang/angular/issues/1114.
   allow_failures:
+    - env: PKG="examples/hacker_news_pwa"
     - env: PKG="examples/github_issues"
     - env: PKG="examples/registration_form"
+    - env: PKG="examples/i18n"
 
   include:
 
@@ -82,10 +87,6 @@ jobs:
 
       addons:
         chrome: stable
-      before_install:
-        - export DISPLAY=:99.0
-        - sh -e /etc/init.d/xvfb start
-        - "t=0; until (xdpyinfo -display :99 &> /dev/null || test $t -gt 10); do sleep 1; let t=$t+1; done"
 
     - stage: presubmit
       script: ./tool/travis.sh analyze
@@ -131,10 +132,6 @@ jobs:
 
       addons:
         chrome: stable
-      before_install:
-        - export DISPLAY=:99.0
-        - sh -e /etc/init.d/xvfb start
-        - "t=0; until (xdpyinfo -display :99 &> /dev/null || test $t -gt 10); do sleep 1; let t=$t+1; done"
 
     - stage: presubmit
       script: ./tool/travis.sh analyze
@@ -142,6 +139,14 @@ jobs:
 
     - stage: presubmit
       script: ./tool/travis.sh analyze
+      env: PKG="angular_analyzer_plugin"
+
+    - stage: testing
+      script: ./tool/travis.sh test:nobuild
+      env: PKG="angular_analyzer_plugin"
+
+    - stage: presubmit
+      script: ./tool/travis.sh analyze
       env: PKG="angular_ast"
 
     - stage: building
@@ -202,10 +207,6 @@ jobs:
 
       addons:
         chrome: stable
-      before_install:
-        - export DISPLAY=:99.0
-        - sh -e /etc/init.d/xvfb start
-        - "t=0; until (xdpyinfo -display :99 &> /dev/null || test $t -gt 10); do sleep 1; let t=$t+1; done"
 
     - stage: presubmit
       script: ./tool/travis.sh analyze
@@ -229,10 +230,6 @@ jobs:
 
       addons:
         chrome: stable
-      before_install:
-        - export DISPLAY=:99.0
-        - sh -e /etc/init.d/xvfb start
-        - "t=0; until (xdpyinfo -display :99 &> /dev/null || test $t -gt 10); do sleep 1; let t=$t+1; done"
 
     - stage: presubmit
       script: ./tool/travis.sh analyze
@@ -256,10 +253,6 @@ jobs:
 
       addons:
         chrome: stable
-      before_install:
-        - export DISPLAY=:99.0
-        - sh -e /etc/init.d/xvfb start
-        - "t=0; until (xdpyinfo -display :99 &> /dev/null || test $t -gt 10); do sleep 1; let t=$t+1; done"
 
     - stage: presubmit
       script: ./tool/travis.sh analyze
@@ -291,10 +284,6 @@ jobs:
 
       addons:
         chrome: stable
-      before_install:
-        - export DISPLAY=:99.0
-        - sh -e /etc/init.d/xvfb start
-        - "t=0; until (xdpyinfo -display :99 &> /dev/null || test $t -gt 10); do sleep 1; let t=$t+1; done"
 
     - stage: presubmit
       script: ./tool/travis.sh analyze
@@ -318,10 +307,6 @@ jobs:
 
       addons:
         chrome: stable
-      before_install:
-        - export DISPLAY=:99.0
-        - sh -e /etc/init.d/xvfb start
-        - "t=0; until (xdpyinfo -display :99 &> /dev/null || test $t -gt 10); do sleep 1; let t=$t+1; done"
 
     - stage: presubmit
       script: ./tool/travis.sh analyze
@@ -357,10 +342,6 @@ jobs:
 
       addons:
         chrome: stable
-      before_install:
-        - export DISPLAY=:99.0
-        - sh -e /etc/init.d/xvfb start
-        - "t=0; until (xdpyinfo -display :99 &> /dev/null || test $t -gt 10); do sleep 1; let t=$t+1; done"
 
     - stage: presubmit
       script: ./tool/travis.sh analyze

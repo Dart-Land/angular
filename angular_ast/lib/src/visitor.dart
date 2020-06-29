@@ -8,6 +8,7 @@ export 'visitors/desugar_visitor.dart';
 export 'visitors/humanizing.dart';
 export 'visitors/identity.dart';
 export 'visitors/recursive.dart';
+export 'visitors/throwing.dart';
 export 'visitors/whitespace.dart';
 
 /// A visitor for [TemplateAst] trees that may process each node.
@@ -67,7 +68,7 @@ abstract class TemplateAstVisitor<R, C> {
   R visitEvent(EventAst astNode, [C context]);
 
   /// Visits all expression ASTs.
-  R visitExpression(ExpressionAst astNode, [C context]);
+  R visitExpression(ExpressionAst<Object> astNode, [C context]);
 
   /// Visits all interpolation ASTs.
   R visitInterpolation(InterpolationAst astNode, [C context]);

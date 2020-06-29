@@ -6,12 +6,43 @@ import 'dart:async';
 
 import 'package:meta/meta.dart';
 import 'package:angular/di.dart';
-import 'package:angular/experimental.dart';
 
 import '../errors.dart';
+import 'ng_zone/timer_hook_zone.dart';
 
 /// Creates a [NgTestStabilizer], optionally from an [Injector].
 typedef NgTestStabilizerFactory = NgTestStabilizer Function(Injector);
+
+/// A variant of an [NgTestStabilizerFactory] with access to [TimerHookZone].
+///
+/// In the future we can consider opening up visibility, but for now we should
+/// ensure that only our own stabilizers have access to this specific zone hook.
+typedef AllowTimerHookZoneAccess = NgTestStabilizer Function(
+  Injector, [
+  TimerHookZone,
+]);
+
+/// Returns a composed sequence of [factories] as a single stabilizer.
+NgTestStabilizerFactory composeStabilizers(
+  Iterable<NgTestStabilizerFactory> factories,
+) {
+  return (Injector injector, [TimerHookZone zone]) {
+    return _DelegatingNgTestStabilizer(factories.map((f) {
+      // Most (i.e. all user-land) stabilizers do not have access to the
+      // "secret" TimerHookZone. Only functions that are defined within this
+      // package may have them, so we pass the zone to those functions only.
+      if (f is AllowTimerHookZoneAccess) {
+        return f(injector, zone);
+      }
+      // All other factories just are given an injector.
+      if (f is NgTestStabilizerFactory) {
+        return f(injector);
+      }
+      // Base case.
+      throw ArgumentError('Invalid stabilizer factory: $f');
+    }));
+  };
+}
 
 /// Abstraction around services that change the state of the DOM asynchronously.
 ///
@@ -40,12 +71,7 @@ typedef NgTestStabilizerFactory = NgTestStabilizer Function(Injector);
 ///
 /// Either `extend` or `implement` [NgTestStabilizer].
 abstract class NgTestStabilizer {
-  /// Create a new [NgTestStabilizer] that delegates to all [stabilizers].
-  ///
-  /// The [NgTestStabilizer.update] completes when _every_ stabilizer completes.
-  factory NgTestStabilizer.all(
-    Iterable<NgTestStabilizer> stabilizers,
-  ) = DelegatingNgTestStabilizer;
+  static const NgTestStabilizer alwaysStable = _AlwaysStableNgTestStabilizer();
 
   // Allow inheritance.
   const NgTestStabilizer();
@@ -116,13 +142,19 @@ abstract class NgTestStabilizer {
   }
 }
 
-@visibleForTesting
-class DelegatingNgTestStabilizer extends NgTestStabilizer {
+class _AlwaysStableNgTestStabilizer extends NgTestStabilizer {
+  const _AlwaysStableNgTestStabilizer();
+
+  @override
+  bool get isStable => true;
+}
+
+class _DelegatingNgTestStabilizer extends NgTestStabilizer {
   final List<NgTestStabilizer> _delegates;
 
   bool _updatedAtLeastOnce = false;
 
-  DelegatingNgTestStabilizer(Iterable<NgTestStabilizer> stabilizers)
+  _DelegatingNgTestStabilizer(Iterable<NgTestStabilizer> stabilizers)
       : _delegates = stabilizers.toList(growable: false);
 
   @override
@@ -171,72 +203,4 @@ class DelegatingNgTestStabilizer extends NgTestStabilizer {
       _updatedAtLeastOnce = false;
     }
   }
-}
-
-/// A wrapper API that reports stability based on the Angular [NgZone].
-class NgZoneStabilizer extends NgTestStabilizer {
-  final NgZone _ngZone;
-
-  const NgZoneStabilizer(this._ngZone);
-
-  /// Zone is considered stable when there are no more micro-tasks or timers.
-  @override
-  bool get isStable {
-    return !(_ngZone.hasPendingMacrotasks || _ngZone.hasPendingMicrotasks);
-  }
-
-  @override
-  Future<bool> update([void Function() fn]) {
-    return Future.sync(() => _waitForZone(fn)).then((_) => isStable);
-  }
-
-  Future<void> _waitForZone([void fn()]) async {
-    // If we haven't supplied anything, at least run a simple function w/ task.
-    // This gives enough "work" to do where we can catch an error or stability.
-    scheduleMicrotask(() {
-      _ngZone.runGuarded(fn ?? () => scheduleMicrotask(() {}));
-    });
-
-    var ngZoneErrorFuture = _ngZone.onError.first;
-    await _waitForFutureOrFailOnNgZoneError(
-        _ngZone.onTurnDone.first, ngZoneErrorFuture);
-
-    var longestPendingTimerDuration = longestPendingTimer(_ngZone);
-    if (longestPendingTimerDuration != Duration.zero) {
-      await _waitForFutureOrFailOnNgZoneError(
-          Future.delayed(longestPendingTimerDuration), ngZoneErrorFuture);
-    }
-  }
-
-  Future<void> _waitForFutureOrFailOnNgZoneError(
-      Future future, Future<NgZoneError> ngZoneErrorFuture) async {
-    // Stop executing as soon as either [future] or an error occurs.
-    NgZoneError caughtError;
-    var finishedWithoutError = false;
-    await Future.any([
-      future,
-      ngZoneErrorFuture.then((e) {
-        if (!finishedWithoutError) {
-          caughtError = e;
-        }
-      })
-    ]);
-
-    // Give a bit of time to catch up, we could still have an occur in future.
-    await Future(() {});
-
-    // Fail if we caught an error.
-    if (caughtError != null) {
-      return Future.error(
-        caughtError.error,
-        StackTrace.fromString(caughtError.stackTrace.join('\n')),
-      );
-    }
-
-    // Mark finish.
-    finishedWithoutError = true;
-  }
-
-  @override
-  String toString() => '$NgZoneStabilizer {isStable: $isStable}';
 }

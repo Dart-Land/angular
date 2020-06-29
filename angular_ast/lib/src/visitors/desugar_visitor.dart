@@ -11,14 +11,14 @@ import '../visitor.dart';
 /// within a given AST. Ignores non-desugarable nodes.
 /// This modifies the structure, and the original version of
 /// each desugared node can be accessed by 'origin'.
-class DesugarVisitor implements TemplateAstVisitor<TemplateAst, String> {
+class DesugarVisitor implements TemplateAstVisitor<TemplateAst, void> {
   final bool _toolFriendlyAstOrigin;
   final ExceptionHandler exceptionHandler;
 
   DesugarVisitor({
     bool toolFriendlyAstOrigin = false,
     ExceptionHandler exceptionHandler,
-  })  : exceptionHandler = exceptionHandler ?? ThrowingExceptionHandler(),
+  })  : exceptionHandler = exceptionHandler ?? const ThrowingExceptionHandler(),
         _toolFriendlyAstOrigin = toolFriendlyAstOrigin;
 
   @override
@@ -28,29 +28,7 @@ class DesugarVisitor implements TemplateAstVisitor<TemplateAst, String> {
   TemplateAst visitAttribute(AttributeAst astNode, [_]) => astNode;
 
   @override
-  TemplateAst visitBanana(BananaAst astNode, [String flag]) {
-    var origin = _toolFriendlyAstOrigin ? astNode : null;
-
-    var appendedValue = (flag == 'event') ? ' = \$event' : '';
-    if (astNode.value != null) {
-      if (flag == 'event') {
-        return EventAst.from(
-          origin,
-          astNode.name + 'Change',
-          astNode.value + appendedValue,
-        );
-      }
-      if (flag == 'property') {
-        return PropertyAst.from(
-          origin,
-          astNode.name,
-          astNode.value,
-        );
-      }
-    }
-
-    return astNode;
-  }
+  TemplateAst visitBanana(BananaAst astNode, [_]) => astNode;
 
   @override
   TemplateAst visitCloseElement(CloseElementAst astNode, [_]) => astNode;
@@ -74,14 +52,7 @@ class DesugarVisitor implements TemplateAstVisitor<TemplateAst, String> {
     _visitChildren(astNode);
 
     if (astNode.bananas.isNotEmpty) {
-      for (BananaAst bananaAst in astNode.bananas) {
-        var toAddEvent = visitBanana(bananaAst, 'event');
-        astNode.events.add(toAddEvent);
-
-        var toAddProperty = visitBanana(bananaAst, 'property');
-        astNode.properties.add(toAddProperty);
-      }
-      astNode.bananas.clear();
+      _desugarBananas(astNode);
     }
 
     if (astNode.annotations.isNotEmpty) {
@@ -149,7 +120,7 @@ class DesugarVisitor implements TemplateAstVisitor<TemplateAst, String> {
   TemplateAst visitEvent(EventAst astNode, [_]) => astNode;
 
   @override
-  TemplateAst visitExpression(ExpressionAst astNode, [_]) => astNode;
+  TemplateAst visitExpression(ExpressionAst<Object> astNode, [_]) => astNode;
 
   @override
   TemplateAst visitInterpolation(InterpolationAst astNode, [_]) => astNode;
@@ -169,10 +140,41 @@ class DesugarVisitor implements TemplateAstVisitor<TemplateAst, String> {
   @override
   TemplateAst visitText(TextAst astNode, [_]) => astNode;
 
-  EmbeddedTemplateAst _desugarStar(
-    StandaloneTemplateAst astNode,
-    List<StarAst> stars,
-  ) {
+  /// Rewrites each banana on [astNode] as an event, property binding pair.
+  ///
+  /// For example, the banana binding
+  ///
+  ///     [(foo)]="bar"
+  ///
+  /// is rewritten as the property binding
+  ///
+  ///     [foo]="bar"
+  ///
+  /// and the event binding
+  ///
+  ///     (fooChange)="bar = $event"
+  ///
+  /// This clears any banana bindings from [astNode].
+  void _desugarBananas(ElementAst astNode) {
+    for (var banana in astNode.bananas) {
+      if (banana.value == null) continue;
+      var origin = _toolFriendlyAstOrigin ? banana : null;
+      astNode
+        ..events.add(EventAst.from(
+          origin,
+          '${banana.name}Change',
+          '${banana.value} = \$event',
+        ))
+        ..properties.add(PropertyAst.from(
+          origin,
+          banana.name,
+          banana.value,
+        ));
+    }
+    astNode.bananas.clear();
+  }
+
+  TemplateAst _desugarStar(StandaloneTemplateAst astNode, List<StarAst> stars) {
     var starAst = stars[0];
     var origin = _toolFriendlyAstOrigin ? starAst : null;
     var starExpression = starAst.value?.trim();
@@ -196,11 +198,7 @@ class DesugarVisitor implements TemplateAstVisitor<TemplateAst, String> {
         );
       } catch (e) {
         exceptionHandler.handle(e);
-        if (astNode is EmbeddedTemplateAst) {
-          return astNode;
-        }
-        // We parsed this as something unexpected, and should not continue.
-        rethrow;
+        return astNode;
       }
       if (micro != null) {
         propertiesToAdd.addAll(micro.properties);

@@ -77,8 +77,7 @@ void main() {
       test('should handle asynchronous fn with delayed future', () async {
         final fixture = await testBed.create(
             beforeComponentCreated: (i) =>
-                new Future.delayed(Duration(milliseconds: 200), () {})
-                    .then((_) {
+                Future.delayed(Duration(milliseconds: 200), () {}).then((_) {
                   testService = i.get(TestService);
                   testService.value = 'New value';
                 }),
@@ -94,24 +93,24 @@ void main() {
       test('should handle synchronous fn', () async {
         expect(testBed.create(beforeComponentCreated: (_) {
           throw Error();
-        }), throwsA(const isInstanceOf<Error>()));
+        }), throwsA(const TypeMatcher<Error>()));
       });
 
       test('should handle asynchronous fn', () async {
         expect(testBed.create(beforeComponentCreated: (_) async {
           throw Error();
-        }), throwsA(const isInstanceOf<Error>()));
+        }), throwsA(const TypeMatcher<Error>()));
       });
 
       test('should handle asynchronous fn with delayed future', () async {
         expect(
             testBed.create(
                 beforeComponentCreated: (_) =>
-                    new Future.delayed(Duration(milliseconds: 200), () {})
+                    Future.delayed(Duration(milliseconds: 200), () {})
                         .then((_) {
                       throw Error();
                     })),
-            throwsA(const isInstanceOf<Error>()));
+            throwsA(const TypeMatcher<Error>()));
       });
     });
   });

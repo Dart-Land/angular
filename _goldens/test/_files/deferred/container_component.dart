@@ -13,20 +13,23 @@ import 'deferred_component.dart';
     <div *ngIf="showDeferredChild">
       <deferred-child-3 @deferred #queryMe></deferred-child-3>
     </div>
+    <deferred-child-on-push @deferred></deferred-child-on-push>
     <deferred-child-without-ng-content @deferred>
-      Hello World
     </deferred-child-without-ng-content>
     <deferred-child-with-ng-content @deferred>
       Hello World
     </deferred-child-with-ng-content>
     <not-deferred-child></not-deferred-child>
+    <deferred-child-with-services @deferred></deferred-child-with-services>
   ''',
   directives: [
     DeferredChild1Component,
     DeferredChild2Component,
     DeferredChild3Component,
+    DeferredChildOnPush,
     DeferredChildComponentWithoutNgContent,
     DeferredChildComponentWithNgContent,
+    DeferredChildComponentWithServices,
     NgIf,
     NotDeferredChildComponent,
     SampleComponent,

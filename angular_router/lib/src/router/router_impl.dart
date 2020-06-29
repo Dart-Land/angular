@@ -29,7 +29,7 @@ class RouterImpl extends Router {
   final Location _location;
   final RouterHook _routerHook;
   RouterState _activeState;
-  Iterable<ComponentRef> _activeComponentRefs = [];
+  Iterable<ComponentRef<Object>> _activeComponentRefs = [];
   StreamController<String> _onNavigationStart;
   RouterOutlet _rootOutlet;
 
@@ -50,12 +50,12 @@ class RouterImpl extends Router {
       final navigationParams = NavigationParams(
           queryParameters: url.queryParameters,
           fragment: fragment,
-          updateUrl: false);
+          replace: true);
       _enqueueNavigation(url.path, navigationParams).then((navigationResult) {
         // If the back navigation was blocked (DeactivateGuard), push the
         // activeState back into the history.
         if (navigationResult == NavigationResult.BLOCKED_BY_GUARD) {
-          _location.replaceState(_activeState.toUrl());
+          _location.go(_activeState.toUrl());
         }
       });
     });
@@ -171,13 +171,28 @@ class RouterImpl extends Router {
             navigationParams;
     navigationParams?.assertValid();
 
-    var queryParameters = (navigationParams?.queryParameters ?? {});
+    var queryParameters = navigationParams?.queryParameters ?? {};
     var reload = navigationParams != null ? navigationParams.reload : false;
     if (!reload &&
         current != null &&
         path == current.path &&
         (navigationParams?.fragment ?? '') == current.fragment &&
-        const MapEquality().equals(queryParameters, current.queryParameters)) {
+        const MapEquality<String, String>()
+            .equals(queryParameters, current.queryParameters)) {
+      // In the rare case that a popstate event matches a route that redirects
+      // *to* the current route, the current state will already match the
+      // redirected state. Normally when the current state and requested state
+      // match, navigation returns successfuly without navigating since we don't
+      // want to activate the already active route; however, in this case the
+      // browser state will be out of sync with the current state due to the
+      // popstate event. To synchronize this state without activating the
+      // already active route, we simply need to push the redirected state to
+      // the browser. Note that we only need to check if the path is different,
+      // and not the fragment identifier or query parameters, because a redirect
+      // route can only affect the path.
+      if (path != _location.path()) {
+        _location.replaceState(current.toUrl());
+      }
       return NavigationResult.SUCCESS;
     }
 
@@ -237,109 +252,102 @@ class RouterImpl extends Router {
     String path,
     NavigationParams navigationParams,
   ) {
-    return _resolveStateForOutlet(_rootOutlet, path).then((routerState) {
-      if (routerState != null) {
-        routerState.path = path;
-        if (navigationParams != null) {
-          routerState.fragment = navigationParams.fragment;
-          routerState.queryParameters = navigationParams.queryParameters;
-        }
-        return _attachDefaultChildren(routerState);
-      }
-    });
+    var state = MutableRouterState()..path = path;
+    if (navigationParams != null) {
+      state
+        ..fragment = navigationParams.fragment
+        ..queryParameters = navigationParams.queryParameters;
+    }
+    return _resolveStateForOutlet(_rootOutlet, state, path)
+        .then((matched) => matched ? _attachDefaultChildren(state) : null);
   }
 
   /// Recursive function to iterate through route tree.
   ///
   /// Should only be called by [_resolveState].
-  Future<MutableRouterState> _resolveStateForOutlet(
-      RouterOutlet outlet, String path) async {
-    if (outlet == null) {
-      if (path == '') {
-        return MutableRouterState();
+  ///
+  /// Returns true if [outlet] has a route definition that matches [path]. The
+  /// matching results are written to [state].
+  Future<bool> _resolveStateForOutlet(
+    RouterOutlet outlet,
+    MutableRouterState state,
+    String path,
+  ) async {
+    // If there's no outlet, this is a successful match if there's also no
+    // remaining path.
+    if (outlet == null) return path.isEmpty;
+    for (var route in outlet.routes) {
+      var match = route.toRegExp().matchAsPrefix(path);
+      if (match == null) continue;
+      var incomplete = match.end != path.length;
+      state.push(route, match);
+      var component = await _componentFactory(state);
+      if (component == null) {
+        // If the route definition doesn't specify a component to load, we can
+        // assume it redirects. Since a redirecting route definition can't
+        // have any nested routes, it must match completely.
+        if (incomplete) {
+          state.pop();
+          continue;
+        }
+        // Found a matching, redirecting route.
+        return true;
       }
-      return null;
-    }
-
-    for (RouteDefinition route in outlet.routes) {
-      Match match = route.toRegExp().matchAsPrefix(path);
-      if (match != null) {
-        MutableRouterState routerState;
-        final component = await _getTypeFromRoute(route);
-        ComponentRef componentRef =
-            component != null ? outlet.prepare(component) : null;
-
-        // TODO(nxl): Handle wildcard paths.
-        // Only the prefix matched and the route is not a wildcard path.
-        if (match.end != path.length) {
-          // The route has no component and cannot have children. Continue
-          // to search the next route.
-          if (componentRef == null) {
-            continue;
-          }
-
-          RouterOutlet nextOutlet =
-              componentRef.injector.get(RouterOutletToken).routerOutlet;
-          // The route's component has no outlet. Continue search.
-          if (nextOutlet == null) {
-            continue;
-          }
-        }
-
-        if (componentRef != null) {
-          RouterOutlet nextOutlet =
-              componentRef.injector.get(RouterOutletToken).routerOutlet;
-          routerState = await _resolveStateForOutlet(
-              nextOutlet, path.substring(match.end));
-        }
-        if (routerState == null) {
-          if (match.end != path.length) {
-            continue;
-          }
-
-          routerState = MutableRouterState();
-        }
-
-        routerState.routes.insert(0, route);
-
-        if (component != null) {
-          routerState
-            ..factories[componentRef] = component
-            ..components.insert(0, componentRef);
-        }
-
-        Iterable<String> parameters = route.parameters;
-        // Append current matches params
-        int index = 1;
-        for (String parameter in parameters) {
-          routerState.parameters[parameter] =
-              Uri.decodeComponent(match[index++]);
-        }
-
-        return routerState;
+      var componentRef = outlet.prepare(component);
+      var nextOutlet = _nextOutlet(componentRef);
+      // If the current route doesn't match the entire path, there must be a
+      // nested outlet to complete the match.
+      if (incomplete && nextOutlet == null) {
+        state.pop();
+        continue;
       }
+      // Push matching component factory and reference before recursing.
+      state
+        ..components.add(componentRef)
+        ..factories[componentRef] = component;
+      // Attempt to match remaining path to nested routes.
+      var remainder = path.substring(match.end);
+      if (await _resolveStateForOutlet(nextOutlet, state, remainder)) {
+        return true;
+      }
+      // Backtrack and try the next route.
+      state
+        ..components.removeLast()
+        ..factories.remove(componentRef)
+        ..pop();
     }
-
-    if (path == '') {
-      return MutableRouterState();
-    }
-
-    return null;
+    // At this point no routes matched. This is considered a successful match
+    // only if there's also no remaining path to be matched, in which case the
+    // outlet can render a default route, if defined.
+    return path.isEmpty;
   }
 
-  /// Gets a type from a [RouteDefinition].
+  /// Returns the [ComponentFactory] loaded by the partial [state]'s last route.
   ///
-  /// Checks if the route is a valid component route and returns the component
-  /// type. If the route is not a valid component route, returns null.
-  FutureOr<ComponentFactory> _getTypeFromRoute(RouteDefinition route) {
+  /// Returns null if the last route is a [RedirectRouteDefinition].
+  FutureOr<ComponentFactory<Object>> _componentFactory(
+      MutableRouterState state) {
+    var route = state.routes.last;
     if (route is ComponentRouteDefinition) {
       return route.component;
     }
     if (route is DeferredRouteDefinition) {
-      return route.loader();
+      if (route.prefetcher == null) return route.loader();
+      // The prefetcher may return void, so it must be wrapped in a Future so
+      // that it can be passed to Future.wait().
+      var prefetcherFuture = Future.value(route.prefetcher(state.build()));
+      var loaderFuture = route.loader();
+      return Future.wait([prefetcherFuture, loaderFuture])
+          .then((_) => loaderFuture);
     }
     return null;
   }
+
+  /// Returns the next [RouterOutlet] created by [componentRef], if any.
+  RouterOutlet _nextOutlet(ComponentRef<Object> componentRef) =>
+      componentRef.injector
+          .provideType<RouterOutletToken>(RouterOutletToken)
+          .routerOutlet;
 
   /// Navigates the remaining router tree and adds the default children.
   ///
@@ -349,19 +357,13 @@ class RouterImpl extends Router {
   Future<MutableRouterState> _attachDefaultChildren(
       MutableRouterState stateSoFar) async {
     RouterOutlet nextOutlet;
-    if (stateSoFar.routes.length == 0) {
+    if (stateSoFar.routes.isEmpty) {
       nextOutlet = _rootOutlet;
+    } else if (stateSoFar.routes.last is RedirectRouteDefinition) {
+      // If the last route is a redirect, there will be no default children.
+      return stateSoFar;
     } else {
-      // If the last route is a not component route, there will be no default
-      // children.
-      final component = await _getTypeFromRoute(stateSoFar.routes.last);
-      if (component == null) {
-        return stateSoFar;
-      }
-
-      nextOutlet = stateSoFar.components.last.injector
-          .get(RouterOutletToken)
-          .routerOutlet;
+      nextOutlet = _nextOutlet(stateSoFar.components.last);
     }
     if (nextOutlet == null) {
       return stateSoFar;
@@ -372,7 +374,7 @@ class RouterImpl extends Router {
       if (route.useAsDefault) {
         stateSoFar.routes.add(route);
 
-        final component = await _getTypeFromRoute(stateSoFar.routes.last);
+        final component = await _componentFactory(stateSoFar);
         // The default route has a component, and we need to check for defaults
         // on the child route.
         if (component != null) {
@@ -410,8 +412,8 @@ class RouterImpl extends Router {
   /// next state.
   Future<bool> _canDeactivate(MutableRouterState mutableNextState) async {
     RouterState nextState = mutableNextState.build();
-    for (ComponentRef componentRef in _activeComponentRefs) {
-      Object component = componentRef.instance;
+    for (ComponentRef<Object> componentRef in _activeComponentRefs) {
+      final component = componentRef.instance;
       if (component is CanDeactivate &&
           !(await component.canDeactivate(_activeState, nextState))) {
         return false;
@@ -429,8 +431,8 @@ class RouterImpl extends Router {
   /// Returns whether the next state can activate.
   Future<bool> _canActivate(MutableRouterState mutableNextState) async {
     RouterState nextState = mutableNextState.build();
-    for (ComponentRef componentRef in mutableNextState.components) {
-      Object component = componentRef.instance;
+    for (ComponentRef<Object> componentRef in mutableNextState.components) {
+      final component = componentRef.instance;
       if (component is CanActivate &&
           !(await component.canActivate(_activeState, nextState))) {
         return false;
@@ -446,7 +448,7 @@ class RouterImpl extends Router {
   }
 
   /// Activates a [RouterState] in the matched [RouterOutlet]s.
-  Future _activateRouterState(MutableRouterState mutableNextState) async {
+  Future<void> _activateRouterState(MutableRouterState mutableNextState) async {
     final nextState = mutableNextState.build();
 
     for (final componentRef in _activeComponentRefs) {
@@ -469,7 +471,7 @@ class RouterImpl extends Router {
         // that lifecycle methods are invoked on the correct instance.
         mutableNextState.components[i] = componentRef;
       }
-      currentOutlet = componentRef.injector.get(RouterOutletToken).routerOutlet;
+      currentOutlet = _nextOutlet(componentRef);
       final component = componentRef.instance;
       if (component is OnActivate) {
         component.onActivate(_activeState, nextState);

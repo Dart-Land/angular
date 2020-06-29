@@ -6,7 +6,7 @@ final catchStackVar = o.variable('stack');
 
 abstract class OutputEmitter {
   String emitStatements(String moduleUrl, List<o.Statement> stmts,
-      List<String> exportedVars, Map<String, String> deferredModules);
+      Map<String, String> deferredModules);
 }
 
 class _EmittedLine {
@@ -17,23 +17,17 @@ class _EmittedLine {
 
 class EmitterVisitorContext {
   final Map<String, String> deferredModules;
-  final List<String> _exportedVars;
   int _indent;
   int _outputPos = 0;
-  // Current method being emitted. Allows expressions access to method
-  // parameter names.
-  o.ClassMethod _activeMethod;
-  bool _inSuperCall = false;
 
   final List<_EmittedLine> _lines;
   final List<o.ClassStmt> _classes = [];
 
-  static EmitterVisitorContext createRoot(
-      List<String> exportedVars, Map<String, String> deferredModules) {
-    return EmitterVisitorContext(exportedVars, 0, deferredModules);
+  static EmitterVisitorContext createRoot(Map<String, String> deferredModules) {
+    return EmitterVisitorContext(0, deferredModules);
   }
 
-  EmitterVisitorContext(this._exportedVars, this._indent, this.deferredModules)
+  EmitterVisitorContext(this._indent, this.deferredModules)
       : this._lines = [_EmittedLine(_indent)];
 
   _EmittedLine get _currentLine {
@@ -41,10 +35,6 @@ class EmitterVisitorContext {
   }
 
   int get currentLineLength => _currentLine.indent + _outputPos;
-
-  bool isExportedVar(String varName) {
-    return !identical(_exportedVars.indexOf(varName), -1);
-  }
 
   void println([String lastPart = '']) {
     print(lastPart, true);
@@ -56,7 +46,7 @@ class EmitterVisitorContext {
   }
 
   void print(String part, [bool newLine = false]) {
-    if (part.length > 0) {
+    if (part.isNotEmpty) {
       _currentLine.parts.add(part);
     }
     if (newLine) {
@@ -92,7 +82,7 @@ class EmitterVisitorContext {
   }
 
   o.ClassStmt get currentClass {
-    return _classes.length > 0 ? _classes[_classes.length - 1] : null;
+    return _classes.isNotEmpty ? _classes[_classes.length - 1] : null;
   }
 
   String toSource() {
@@ -102,7 +92,7 @@ class EmitterVisitorContext {
     }
     return lines
         .map((line) {
-          if (line.parts.length > 0) {
+          if (line.parts.isNotEmpty) {
             return _createIndent(line.indent) + line.parts.join('');
           } else {
             return '';
@@ -111,29 +101,6 @@ class EmitterVisitorContext {
         .toList()
         .join('\n');
   }
-
-  /// Creates method context for expressions.
-  void enterMethod(o.ClassMethod method) {
-    _activeMethod = method;
-  }
-
-  /// Removes method context for expressions.
-  void exitMethod() {
-    _activeMethod = null;
-  }
-
-  /// Creates super call context for expressions.
-  void enterSuperCall() {
-    _inSuperCall = true;
-  }
-
-  /// Removes super call context for expressions.
-  void exitSuperCall() {
-    _inSuperCall = false;
-  }
-
-  bool get inSuperCall => _inSuperCall;
-  o.ClassMethod get activeMethod => _activeMethod;
 }
 
 abstract class AbstractEmitterVisitor
@@ -173,7 +140,7 @@ abstract class AbstractEmitterVisitor
     context.print('if (');
     stmt.condition.visitExpression(this, context);
     context.print(') {');
-    var hasElseCase = stmt.falseCase != null && stmt.falseCase.length > 0;
+    var hasElseCase = stmt.falseCase != null && stmt.falseCase.isNotEmpty;
     if (stmt.trueCase.length <= 1 && !hasElseCase) {
       context.print(' ');
       visitAllStatements(stmt.trueCase, context);
@@ -329,7 +296,7 @@ abstract class AbstractEmitterVisitor
   @override
   void visitInvokeMemberMethodExpr(
       o.InvokeMemberMethodExpr expr, EmitterVisitorContext context) {
-    context.print('${expr.methodName}(');
+    context.print('this.${expr.methodName}(');
     visitAllExpressions(expr.args, context, ',');
     visitAllNamedExpressions(
       expr.namedArgs,
@@ -373,7 +340,7 @@ abstract class AbstractEmitterVisitor
   void visitReadStaticMemberExpr(
       o.ReadStaticMemberExpr ast, EmitterVisitorContext context) {
     var varName = ast.name;
-    o.ExternalType t = ast.sourceClass;
+    var t = ast.sourceClass as o.ExternalType;
     if (t != null) {
       context.print('${t.value.name}.');
     }
@@ -442,8 +409,9 @@ abstract class AbstractEmitterVisitor
 
   @override
   void visitNotExpr(o.NotExpr ast, EmitterVisitorContext context) {
-    context.print('!');
+    context.print('(!');
     ast.condition.visitExpression(this, context);
+    context.print(')');
   }
 
   @override

@@ -1,7 +1,7 @@
 @TestOn('vm')
 import 'dart:async';
 
-import 'package:angular/src/compiler/shadow_css.dart';
+import 'package:angular/src/compiler/stylesheet_compiler/shadow_css.dart';
 import 'package:logging/logging.dart';
 import 'package:test/test.dart';
 
@@ -86,53 +86,57 @@ void main() {
 
   test('should add a class to every rule', () {
     var css = 'one {color: red;} two {color: red;}';
-    var expected = 'one.$content {color:red;} two.$content {color:red;}';
+    var expected = 'one.$content {color:red} two.$content {color:red}';
     shimAndExpect(css, expected);
     shimAndExpect(css, expected);
   });
 
   test('should add a class to every selector', () {
     var css = 'one,two {color: red;}';
-    var expected = 'one.$content,two.$content {color:red;}';
+    var expected = 'one.$content,two.$content {color:red}';
     shimAndExpect(css, expected);
   });
 
   test('should support newlines in the selector and content ', () {
     var css = 'one,\ntwo {\ncolor: red;}';
-    var expected = 'one.$content,two.$content {color:red;}';
+    var expected = 'one.$content,two.$content {color:red}';
     shimAndExpect(css, expected);
   });
 
   test('should handle media rules', () {
     var css = '@media screen and (max-width:800px) {div {font-size:50px;}}';
     var expected =
-        '@media screen AND (max-width:800px) {div.$content {font-size:50px;}}';
+        '@media screen AND (max-width:800px) {div.$content {font-size:50px}}';
     shimAndExpect(css, expected);
   });
 
   test('should handle page rules', () {
     var css = '@page {@top-left {color:red;} font-size:50px;}';
-    shimAndExpect(css, css);
+    var expected = '@page {@top-left {color:red} font-size:50px}';
+    shimAndExpect(css, expected);
   });
 
   test('should handle media rules with simple rules', () {
     var css = '@media screen and (max-width: 800px) '
         '{div {font-size: 50px;}} div {}';
     var expected = '@media screen AND (max-width:800px) '
-        '{div.$content {font-size:50px;}} div.$content {}';
+        '{div.$content {font-size:50px}} div.$content {}';
     shimAndExpect(css, expected);
   });
 
   // Check that the browser supports unprefixed CSS animation
   test('should handle keyframes rules', () {
     var css = '@keyframes foo {0% {transform:translate(-50%) scaleX(0);}}';
-    shimAndExpect(css, css);
+    var expected = '@keyframes foo {0% {transform:translate(-50%) scaleX(0)}}';
+    shimAndExpect(css, expected);
   });
 
   test('should handle -webkit-keyframes rules', () {
     var css = '@-webkit-keyframes foo '
         '{0% {-webkit-transform:translate(-50%) scaleX(0);}}';
-    shimAndExpect(css, css);
+    var expected = '@-webkit-keyframes foo '
+        '{0% {-webkit-transform:translate(-50%) scaleX(0)}}';
+    shimAndExpect(css, expected);
   });
 
   test('should handle complicated selectors', () {
@@ -312,9 +316,9 @@ void main() {
 
     test('should support polyfill-unscoped-rule', () {
       var css = "polyfill-unscoped-rule {content: '#menu > .bar';color: blue;}";
-      legacyShimAndExpect(css, '#menu > .bar {color:blue;}');
+      legacyShimAndExpect(css, '#menu > .bar {color:blue}');
       css = 'polyfill-unscoped-rule {content: "#menu > .bar";color: blue;}';
-      legacyShimAndExpect(css, '#menu > .bar {color:blue;}');
+      legacyShimAndExpect(css, '#menu > .bar {color:blue}');
       css = 'polyfill-unscoped-rule {content: \'button[priority="1"]\';}';
       legacyShimAndExpect(css, 'button[priority="1"] {}');
     });
@@ -322,7 +326,7 @@ void main() {
     test('should support multiple instances polyfill-unscoped-rule', () {
       var css = 'polyfill-unscoped-rule {content: "foo";color: blue;}' +
           'polyfill-unscoped-rule {content: "bar";color: red;}';
-      legacyShimAndExpect(css, 'foo {color:blue;} bar {color:red;}');
+      legacyShimAndExpect(css, 'foo {color:blue} bar {color:red}');
     });
 
     test('should handle ::content', () {
@@ -338,31 +342,6 @@ void main() {
     });
   });
 
-  test('should handle /deep/', () {
-    var css = 'x /deep/ y {}';
-    shimAndExpect(css, 'x.$content y {}');
-    css = '/deep/ x {}';
-    shimAndExpect(css, 'x {}');
-  });
-
-  test('should handle >>>', () {
-    var css = 'x >>> y {}';
-    shimAndExpect(css, 'x.$content y {}');
-    css = '>>> y {}';
-    shimAndExpect(css, 'y {}');
-  });
-
-  test('should handle sequential shadow piercing combinators', () {
-    // Current SASS practices cause frequent occurrences of duplicate shadow
-    // piercing combinators in the generated CSS.
-    var css = 'x /deep/ /deep/ y {}';
-    shimAndExpect(css, 'x.$content y {}');
-    css = 'x >>> >>> y {}';
-    shimAndExpect(css, 'x.$content y {}');
-    css = 'x /deep/ >>> y {}';
-    shimAndExpect(css, 'x.$content y {}');
-  });
-
   test('should handle ::ng-deep', () {
     var css = '::ng-deep y {}';
     shimAndExpect(css, 'y {}');
@@ -374,6 +353,13 @@ void main() {
     shimAndExpect(css, '.$host > .x {}');
     css = ':host > ::ng-deep > .x {}';
     shimAndExpect(css, '.$host > > .x {}');
+  });
+
+  test('should handle sequential ::ng-deep', () {
+    // Current SASS practices cause frequent occurrences of duplicate shadow
+    // piercing combinators in the generated CSS.
+    var css = 'x ::ng-deep ::ng-deep y {}';
+    shimAndExpect(css, 'x.$content y {}');
   });
 
   test('should pass through @import directives', () {
@@ -388,7 +374,7 @@ void main() {
 
   test('should leave calc() unchanged', () {
     var css = 'div {height:calc(100% - 55px);}';
-    shimAndExpect(css, 'div.$content {height:calc(100% - 55px);}');
+    shimAndExpect(css, 'div.$content {height:calc(100% - 55px)}');
   });
 
   test('should strip comments', () {

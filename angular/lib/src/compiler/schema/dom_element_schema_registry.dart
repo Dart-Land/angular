@@ -1,4 +1,4 @@
-import "package:angular/src/core/security.dart";
+import "package:angular/src/compiler/security.dart";
 
 import "element_schema_registry.dart" show ElementSchemaRegistry;
 
@@ -233,16 +233,8 @@ class DomElementSchemaRegistry extends ElementSchemaRegistry {
 
   @override
   bool hasProperty(String tagName, String propName) {
-    if (!identical(tagName.indexOf("-"), -1)) {
-      // can't tell now as we don't know which properties a custom element will get
-
-      // once it is instantiated
-      return true;
-    } else {
-      var elementProperties =
-          schema[tagName.toLowerCase()] ?? schema["unknown"];
-      return elementProperties[propName] != null;
-    }
+    var elementProperties = schema[tagName.toLowerCase()] ?? schema["unknown"];
+    return elementProperties[propName] != null;
   }
 
   static Map<String, TemplateSecurityContext> _SECURITY_SCHEMA;

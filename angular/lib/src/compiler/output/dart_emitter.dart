@@ -1,3 +1,5 @@
+import 'package:meta/meta.dart';
+
 import "../compile_metadata.dart" show CompileIdentifierMetadata;
 import "abstract_emitter.dart"
     show
@@ -14,9 +16,9 @@ var _METADATA_MAP_VAR = '_METADATA';
 String debugOutputAstAsDart(
     dynamic /* o . Statement | o . Expression | o . Type | List < dynamic > */ ast) {
   var converter = _DartEmitterVisitor(_debugModuleUrl);
-  var ctx = EmitterVisitorContext.createRoot([], {});
-  List<dynamic> asts;
-  if (ast is! List) {
+  var ctx = EmitterVisitorContext.createRoot({});
+  List<Object> asts;
+  if (ast is! List<Object>) {
     asts = [ast];
   }
   for (var ast in asts) {
@@ -36,12 +38,12 @@ String debugOutputAstAsDart(
 class DartEmitter implements OutputEmitter {
   @override
   String emitStatements(String moduleUrl, List<o.Statement> stmts,
-      List<String> exportedVars, Map<String, String> deferredModules) {
+      Map<String, String> deferredModules) {
     final srcParts = <String>[];
     // Note: We are not creating a library here as Dart does not need it.
     // Dart analyzer might complain about it though.
     final converter = _DartEmitterVisitor(moduleUrl);
-    final ctx = EmitterVisitorContext.createRoot(exportedVars, deferredModules);
+    final ctx = EmitterVisitorContext.createRoot(deferredModules);
     converter.visitAllStatements(stmts, ctx);
     converter.importsWithPrefixes.forEach((importedModuleUrl, prefix) {
       String importPath = getImportModulePath(moduleUrl, importedModuleUrl);
@@ -93,6 +95,9 @@ class _DartEmitterVisitor extends AbstractEmitterVisitor
 
   /// Whether this is currently emitting a const expression.
   var _inConstContext = false;
+
+  /// Whether this is currently emitting a new instance of a class.
+  var _inInvokeOrNewInstance = false;
 
   _DartEmitterVisitor(this._moduleUrl) : super(true);
 
@@ -154,7 +159,12 @@ class _DartEmitterVisitor extends AbstractEmitterVisitor
     }
     context.println(' {');
     context.incIndent();
-    for (var field in stmt.fields) {
+    // Group fields without initializers to allow dart2js to combine
+    // their initialization. e.g. `a = b = c = null`
+    for (var field in stmt.fields.where((f) => f.initializer != null)) {
+      _visitClassField(field, context);
+    }
+    for (var field in stmt.fields.where((f) => f.initializer == null)) {
       _visitClassField(field, context);
     }
     if (stmt.constructorMethod != null) {
@@ -193,6 +203,14 @@ class _DartEmitterVisitor extends AbstractEmitterVisitor
   }
 
   void _visitClassGetter(o.ClassGetter getter, EmitterVisitorContext context) {
+    for (final annotation in getter.annotations) {
+      context.print('@');
+      annotation.visitExpression(this, context);
+      context.println();
+    }
+    if (getter.hasModifier(o.StmtModifier.Static)) {
+      context.print('static ');
+    }
     if (getter.type != null) {
       getter.type.visitType(this, context);
       context.print(' ');
@@ -205,20 +223,24 @@ class _DartEmitterVisitor extends AbstractEmitterVisitor
   }
 
   void _visitClassConstructor(o.ClassStmt stmt, EmitterVisitorContext context) {
+    final method = stmt.constructorMethod;
+    for (final annotation in method.annotations) {
+      context.print('@');
+      annotation.visitExpression(this, context);
+      context.println();
+    }
     context.print('${stmt.name}(');
-    _visitParams(stmt.constructorMethod.params, context);
+    _visitParams(method.params, context);
     context.print(')');
-    var ctorStmts = stmt.constructorMethod.body;
-    var superCtorExpr = ctorStmts.isNotEmpty
-        ? _getSuperConstructorCallExpr(ctorStmts[0])
+    var initializerStmts = method.initializers;
+    var superCtorExpr = initializerStmts.isNotEmpty
+        ? _getSuperConstructorCallExpr(initializerStmts[0])
         : null;
     if (superCtorExpr != null) {
       context.print(': ');
-      context.enterSuperCall();
       superCtorExpr.visitExpression(this, context);
-      context.exitSuperCall();
-      ctorStmts = ctorStmts.sublist(1);
     }
+    var ctorStmts = method.body;
     if (ctorStmts.isEmpty) {
       // Empty constructor body.
       context.println(';');
@@ -232,9 +254,10 @@ class _DartEmitterVisitor extends AbstractEmitterVisitor
   }
 
   void _visitClassMethod(o.ClassMethod method, EmitterVisitorContext context) {
-    context.enterMethod(method);
-    for (var annotation in method.annotations) {
-      context.print('@$annotation ');
+    for (final annotation in method.annotations) {
+      context.print('@');
+      annotation.visitExpression(this, context);
+      context.println();
     }
     if (method.hasModifier(o.StmtModifier.Static)) {
       context.print('static ');
@@ -251,7 +274,20 @@ class _DartEmitterVisitor extends AbstractEmitterVisitor
     visitAllStatements(method.body, context);
     context.decIndent();
     context.println('}');
-    context.exitMethod();
+  }
+
+  void _visitTypeArguments(
+    List<o.OutputType> typeArguments,
+    EmitterVisitorContext context,
+  ) {
+    if (typeArguments == null || typeArguments.isEmpty) {
+      return;
+    }
+    context.print('<');
+    visitAllObjects((o.OutputType typeArgument) {
+      typeArgument.visitType(this, context);
+    }, typeArguments, context, ',');
+    context.print('>');
   }
 
   void _visitTypeParameters(
@@ -336,13 +372,7 @@ class _DartEmitterVisitor extends AbstractEmitterVisitor
   @override
   void visitReadClassMemberExpr(
       o.ReadClassMemberExpr ast, EmitterVisitorContext context) {
-    if (context.activeMethod != null &&
-        !context.activeMethod.containsParameterName(ast.name) &&
-        !context.inSuperCall) {
-      context.print('${ast.name}');
-    } else {
-      context.print('this.${ast.name}');
-    }
+    context.print('this.${ast.name}');
   }
 
   @override
@@ -352,7 +382,7 @@ class _DartEmitterVisitor extends AbstractEmitterVisitor
     if (!lineWasEmpty) {
       context.print('(');
     }
-    context.print('${expr.name} = ');
+    context.print('this.${expr.name} = ');
     expr.value.visitExpression(this, context);
     if (!lineWasEmpty) {
       context.print(')');
@@ -444,45 +474,43 @@ class _DartEmitterVisitor extends AbstractEmitterVisitor
     o.InvokeFunctionExpr expr,
     EmitterVisitorContext context,
   ) {
+    final wasInNewInstance = _inInvokeOrNewInstance;
+    _inInvokeOrNewInstance = true;
     expr.fn.visitExpression(this, context);
-    var types = expr.typeArgs;
-    if (types != null && types.isNotEmpty) {
-      context.print('<');
-      for (var i = 0; i < types.length; i++) {
-        types[i].visitType(this, context);
-        if (i < types.length - 1) {
-          context.print(', ');
-        }
-      }
-      context.print('>');
-    }
+    _inInvokeOrNewInstance = wasInNewInstance;
+    _visitTypeArguments(expr.typeArgs, context);
     context.print('(');
     visitAllExpressions(expr.args, context, ',');
+    visitAllNamedExpressions(
+      expr.namedArgs,
+      context,
+      ',',
+      alwaysAddSeperator: expr.args.isNotEmpty,
+    );
     context.print(')');
   }
 
   @override
   void visitInstantiateExpr(
       o.InstantiateExpr ast, EmitterVisitorContext context) {
+    final wasInNewInstance = _inInvokeOrNewInstance;
     final wasInConstContext = _inConstContext;
     if (!wasInConstContext && _isConstType(ast.type)) {
       context.print('const ');
       _inConstContext = true;
     }
+    _inInvokeOrNewInstance = true;
     ast.classExpr.visitExpression(this, context);
-    var types = ast.typeArguments;
-    if (types != null && types.isNotEmpty) {
-      context.print('<');
-      for (var i = 0; i < types.length; i++) {
-        types[i].visitType(this, context);
-        if (i < types.length - 1) {
-          context.print(', ');
-        }
-      }
-      context.print('>');
-    }
+    _inInvokeOrNewInstance = wasInNewInstance;
+    _visitTypeArguments(ast.typeArguments, context);
     context.print('(');
     visitAllExpressions(ast.args, context, ',');
+    visitAllNamedExpressions(
+      ast.namedArgs,
+      context,
+      ',',
+      alwaysAddSeperator: ast.args.isNotEmpty,
+    );
     context.print(')');
     _inConstContext = wasInConstContext;
   }
@@ -580,20 +608,26 @@ class _DartEmitterVisitor extends AbstractEmitterVisitor
     List<o.OutputType> typeParams,
     EmitterVisitorContext context,
   ) {
-    final moduleUrl = value.moduleUrl;
-    final isDeferred = context.deferredModules.containsKey(moduleUrl);
-    final prefix = _computeModulePrefix(value, context, isDeferred);
+    final prefix = _computeModulePrefix(
+      value,
+      context,
+      isDeferredAndNewInstance: _inInvokeOrNewInstance &&
+          context.deferredModules.containsKey(value.moduleUrl),
+    );
     _emitIdentifier(value.name, typeParams, context, prefix);
   }
 
   /// Determines the import prefix for accessing symbols for [value].
   String _computeModulePrefix(
     CompileIdentifierMetadata value,
-    EmitterVisitorContext context,
-    bool isDeferred,
-  ) {
-    String prefix = '';
+    EmitterVisitorContext context, {
+    @required bool isDeferredAndNewInstance,
+  }) {
     final moduleUrl = value.moduleUrl;
+    if (isDeferredAndNewInstance) {
+      return context.deferredModules[moduleUrl];
+    }
+    var prefix = '';
     if (moduleUrl != null && moduleUrl != _moduleUrl) {
       prefix = importsWithPrefixes[moduleUrl];
       if (prefix == null) {
@@ -628,16 +662,7 @@ class _DartEmitterVisitor extends AbstractEmitterVisitor
       context.print(identifier.isEmpty ? prefix : '$prefix.');
     }
     context.print(identifier);
-    if (typeParams?.isNotEmpty == true) {
-      context.print('<');
-      visitAllObjects(
-        (o.OutputType t) => t.visitType(this, context),
-        typeParams,
-        context,
-        ',',
-      );
-      context.print('>');
-    }
+    _visitTypeArguments(typeParams, context);
   }
 }
 

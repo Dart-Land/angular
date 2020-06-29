@@ -1,182 +1,173 @@
 // **************************************************************************
-// Generator: Instance of 'Compiler'
+// Generator: AngularDart Compiler
 // **************************************************************************
 
-// ignore_for_file: cancel_subscriptions,constant_identifier_names,duplicate_import,non_constant_identifier_names,library_prefixes,UNUSED_IMPORT,UNUSED_SHOWN_NAME
 import 'nested_ng_for.dart';
 export 'nested_ng_for.dart';
-import 'package:angular/angular.dart';
 import 'package:angular/src/di/reflector.dart' as _ngRef;
 import 'package:angular/angular.template.dart' as _ref0;
-import 'package:angular/src/core/linker/app_view.dart';
+import 'package:angular/src/core/linker/views/component_view.dart' as import0;
 import 'nested_ng_for.dart' as import1;
 import 'package:angular/src/core/linker/view_container.dart';
 import 'package:angular/src/common/directives/ng_for.dart' as import3;
-import 'package:angular/src/core/render/api.dart';
-import 'package:angular/src/core/linker/view_type.dart' as import5;
+import 'package:angular/src/core/linker/style_encapsulation.dart' as import4;
+import 'package:angular/src/core/linker/views/view.dart' as import5;
 import 'package:angular/src/core/change_detection/change_detection.dart';
 import 'dart:html' as import7;
-import 'package:angular/src/core/linker/app_view_utils.dart' as import8;
-import 'package:angular/src/runtime.dart' as import9;
-import 'package:angular/angular.dart';
+import 'package:angular/src/runtime.dart' as import8;
+import 'package:angular/src/runtime/dom_helpers.dart' as import9;
 import 'package:angular/src/core/linker/template_ref.dart';
+import 'package:angular/angular.dart';
+import 'package:angular/src/core/linker/views/embedded_view.dart' as import12;
+import 'package:angular/src/core/linker/views/render_view.dart' as import13;
 import 'dart:core';
+import 'package:angular/src/runtime/text_binding.dart' as import15;
+import 'package:angular/src/runtime/interpolate.dart' as import16;
+import 'package:angular/src/core/linker/views/host_view.dart' as import17;
 
 final List<dynamic> styles$NestedNgForComponent = const [];
 
-class ViewNestedNgForComponent0 extends AppView<import1.NestedNgForComponent> {
+// View for component NestedNgForComponent in asset:_goldens/test/_files/directives/nested_ng_for.dart (changeDetection: Default)
+class ViewNestedNgForComponent0 extends import0.ComponentView<import1.NestedNgForComponent> {
   ViewContainer _appEl_0;
   import3.NgFor _NgFor_0_9;
   var _expr_0;
-  static RenderComponentType _renderType;
-  ViewNestedNgForComponent0(AppView<dynamic> parentView, int parentIndex) : super(import5.ViewType.component, {}, parentView, parentIndex, ChangeDetectionStrategy.CheckAlways) {
-    rootEl = import7.document.createElement('nested-ng-for');
-    _renderType ??= import8.appViewUtils.createRenderType((import9.isDevMode ? 'asset:_goldens/test/_files/directives/nested_ng_for.dart' : null), ViewEncapsulation.None, styles$NestedNgForComponent);
-    setupComponentType(_renderType);
+  static import4.ComponentStyles _componentStyles;
+  ViewNestedNgForComponent0(import5.View parentView, int parentIndex) : super(parentView, parentIndex, ChangeDetectionStrategy.CheckAlways) {
+    this.initComponentStyles();
+    this.rootElement = import7.document.createElement('nested-ng-for');
   }
+  static String get _debugComponentUrl {
+    return (import8.isDevMode ? 'asset:_goldens/test/_files/directives/nested_ng_for.dart' : null);
+  }
+
   @override
-  ComponentRef<import1.NestedNgForComponent> build() {
-    final _rootEl = rootEl;
-    final import7.HtmlElement parentRenderNode = initViewRoot(_rootEl);
-    final _anchor_0 = createViewContainerAnchor();
-    parentRenderNode.append(_anchor_0);
-    _appEl_0 = ViewContainer(0, null, this, _anchor_0);
-    TemplateRef _TemplateRef_0_8 = TemplateRef(_appEl_0, viewFactory_NestedNgForComponent1);
-    _NgFor_0_9 = import3.NgFor(_appEl_0, _TemplateRef_0_8);
-    init(const [], null);
+  void build() {
+    final import7.HtmlElement parentRenderNode = this.initViewRoot();
+    final _anchor_0 = import9.appendAnchor(parentRenderNode);
+    this._appEl_0 = ViewContainer(0, null, this, _anchor_0);
+    TemplateRef _TemplateRef_0_8 = TemplateRef(this._appEl_0, viewFactory_NestedNgForComponent1);
+    this._NgFor_0_9 = import3.NgFor(this._appEl_0, _TemplateRef_0_8);
   }
 
   @override
   void detectChangesInternal() {
-    final import1.NestedNgForComponent _ctx = ctx;
+    final _ctx = this.ctx;
     final currVal_0 = _ctx.matrix;
-    if (import8.checkBinding(_expr_0, currVal_0)) {
-      _NgFor_0_9.ngForOf = currVal_0;
-      _expr_0 = currVal_0;
+    if (import8.checkBinding(this._expr_0, currVal_0, 'matrix', '<FileLocation: 10 asset:_goldens/test/_files/directives/nested_ng_for.dart:1:11>')) {
+      this._NgFor_0_9.ngForOf = currVal_0;
+      this._expr_0 = currVal_0;
     }
-    if (!import8.AppViewUtils.throwOnChanges) {
-      _NgFor_0_9.ngDoCheck();
+    if ((!import8.debugThrowIfChanged)) {
+      this._NgFor_0_9.ngDoCheck();
     }
-    _appEl_0.detectChangesInNestedViews();
+    this._appEl_0.detectChangesInNestedViews();
   }
 
   @override
   void destroyInternal() {
-    _appEl_0?.destroyNestedViews();
-  }
-}
-
-AppView<import1.NestedNgForComponent> viewFactory_NestedNgForComponent0(AppView<dynamic> parentView, int parentIndex) {
-  return ViewNestedNgForComponent0(parentView, parentIndex);
-}
-
-class _ViewNestedNgForComponent1 extends AppView<import1.NestedNgForComponent> {
-  ViewContainer _appEl_1;
-  import3.NgFor _NgFor_1_9;
-  var _expr_0;
-  _ViewNestedNgForComponent1(AppView<dynamic> parentView, int parentIndex) : super(import5.ViewType.embedded, {'\$implicit': null}, parentView, parentIndex, ChangeDetectionStrategy.CheckAlways) {
-    componentType = ViewNestedNgForComponent0._renderType;
-  }
-  @override
-  ComponentRef<import1.NestedNgForComponent> build() {
-    var doc = import7.document;
-    final _el_0 = doc.createElement('span');
-    final _anchor_1 = createViewContainerAnchor();
-    _el_0.append(_anchor_1);
-    _appEl_1 = ViewContainer(1, 0, this, _anchor_1);
-    TemplateRef _TemplateRef_1_8 = TemplateRef(_appEl_1, viewFactory_NestedNgForComponent2);
-    _NgFor_1_9 = import3.NgFor(_appEl_1, _TemplateRef_1_8);
-    init0(_el_0);
+    this._appEl_0.destroyNestedViews();
   }
 
-  @override
-  void detectChangesInternal() {
-    final List<int> local_row = locals['\$implicit'];
-    final currVal_0 = local_row;
-    if (import8.checkBinding(_expr_0, currVal_0)) {
-      _NgFor_1_9.ngForOf = currVal_0;
-      _expr_0 = currVal_0;
+  static void _debugClearComponentStyles() {
+    _componentStyles = null;
+  }
+
+  void initComponentStyles() {
+    var styles = _componentStyles;
+    if (identical(styles, null)) {
+      _componentStyles = (styles = import4.ComponentStyles.unscoped(styles$NestedNgForComponent, _debugComponentUrl));
+      if (import8.isDevMode) {
+        import4.ComponentStyles.debugOnClear(_debugClearComponentStyles);
+      }
     }
-    if (!import8.AppViewUtils.throwOnChanges) {
-      _NgFor_1_9.ngDoCheck();
-    }
-    _appEl_1.detectChangesInNestedViews();
+    this.componentStyles = styles;
   }
-
-  @override
-  void destroyInternal() {
-    _appEl_1?.destroyNestedViews();
-  }
-}
-
-AppView<import1.NestedNgForComponent> viewFactory_NestedNgForComponent1(AppView<dynamic> parentView, int parentIndex) {
-  return _ViewNestedNgForComponent1(parentView, parentIndex);
-}
-
-class _ViewNestedNgForComponent2 extends AppView<import1.NestedNgForComponent> {
-  import7.Text _text_1;
-  var _expr_0;
-  _ViewNestedNgForComponent2(AppView<dynamic> parentView, int parentIndex) : super(import5.ViewType.embedded, {'\$implicit': null}, parentView, parentIndex, ChangeDetectionStrategy.CheckAlways) {
-    componentType = ViewNestedNgForComponent0._renderType;
-  }
-  @override
-  ComponentRef<import1.NestedNgForComponent> build() {
-    var doc = import7.document;
-    final _el_0 = doc.createElement('div');
-    _text_1 = import7.Text('');
-    _el_0.append(_text_1);
-    init0(_el_0);
-  }
-
-  @override
-  void detectChangesInternal() {
-    final local_value = locals['\$implicit'];
-    final currVal_0 = import8.interpolate0(local_value);
-    if (import8.checkBinding(_expr_0, currVal_0)) {
-      _text_1.text = currVal_0;
-      _expr_0 = currVal_0;
-    }
-  }
-}
-
-AppView<import1.NestedNgForComponent> viewFactory_NestedNgForComponent2(AppView<dynamic> parentView, int parentIndex) {
-  return _ViewNestedNgForComponent2(parentView, parentIndex);
-}
-
-final List<dynamic> styles$NestedNgForComponentHost = const [];
-
-class _ViewNestedNgForComponentHost0 extends AppView<import1.NestedNgForComponent> {
-  ViewNestedNgForComponent0 _compView_0;
-  import1.NestedNgForComponent _NestedNgForComponent_0_5;
-  _ViewNestedNgForComponentHost0(AppView<dynamic> parentView, int parentIndex) : super(import5.ViewType.host, {}, parentView, parentIndex, ChangeDetectionStrategy.CheckAlways);
-  @override
-  ComponentRef<import1.NestedNgForComponent> build() {
-    _compView_0 = ViewNestedNgForComponent0(this, 0);
-    rootEl = _compView_0.rootEl;
-    _NestedNgForComponent_0_5 = import1.NestedNgForComponent();
-    _compView_0.create(_NestedNgForComponent_0_5, projectableNodes);
-    init0(rootEl);
-    return ComponentRef(0, this, rootEl, _NestedNgForComponent_0_5);
-  }
-
-  @override
-  void detectChangesInternal() {
-    _compView_0.detectChanges();
-  }
-
-  @override
-  void destroyInternal() {
-    _compView_0?.destroy();
-  }
-}
-
-AppView<import1.NestedNgForComponent> viewFactory_NestedNgForComponentHost0(AppView<dynamic> parentView, int parentIndex) {
-  return _ViewNestedNgForComponentHost0(parentView, parentIndex);
 }
 
 const ComponentFactory<import1.NestedNgForComponent> _NestedNgForComponentNgFactory = const ComponentFactory('nested-ng-for', viewFactory_NestedNgForComponentHost0);
 ComponentFactory<import1.NestedNgForComponent> get NestedNgForComponentNgFactory {
   return _NestedNgForComponentNgFactory;
+}
+
+class _ViewNestedNgForComponent1 extends import12.EmbeddedView<import1.NestedNgForComponent> {
+  ViewContainer _appEl_1;
+  import3.NgFor _NgFor_1_9;
+  var _expr_0;
+  _ViewNestedNgForComponent1(import13.RenderView parentView, int parentIndex) : super(parentView, parentIndex);
+  @override
+  void build() {
+    final doc = import7.document;
+    final _el_0 = doc.createElement('span');
+    final _anchor_1 = import9.appendAnchor(_el_0);
+    this._appEl_1 = ViewContainer(1, 0, this, _anchor_1);
+    TemplateRef _TemplateRef_1_8 = TemplateRef(this._appEl_1, viewFactory_NestedNgForComponent2);
+    this._NgFor_1_9 = import3.NgFor(this._appEl_1, _TemplateRef_1_8);
+    this.initRootNode(_el_0);
+  }
+
+  @override
+  void detectChangesInternal() {
+    final local_row = import8.unsafeCast<List<int>>(this.locals['\$implicit']);
+    final currVal_0 = local_row;
+    if (import8.checkBinding(this._expr_0, currVal_0, 'row', '<FileLocation: 49 asset:_goldens/test/_files/directives/nested_ng_for.dart:2:12>')) {
+      this._NgFor_1_9.ngForOf = currVal_0;
+      this._expr_0 = currVal_0;
+    }
+    if ((!import8.debugThrowIfChanged)) {
+      this._NgFor_1_9.ngDoCheck();
+    }
+    this._appEl_1.detectChangesInNestedViews();
+  }
+
+  @override
+  void destroyInternal() {
+    this._appEl_1.destroyNestedViews();
+  }
+}
+
+import12.EmbeddedView<void> viewFactory_NestedNgForComponent1(import13.RenderView parentView, int parentIndex) {
+  return _ViewNestedNgForComponent1(parentView, parentIndex);
+}
+
+class _ViewNestedNgForComponent2 extends import12.EmbeddedView<import1.NestedNgForComponent> {
+  final import15.TextBinding _textBinding_1 = import15.TextBinding();
+  _ViewNestedNgForComponent2(import13.RenderView parentView, int parentIndex) : super(parentView, parentIndex);
+  @override
+  void build() {
+    final doc = import7.document;
+    final _el_0 = doc.createElement('div');
+    _el_0.append(this._textBinding_1.element);
+    this.initRootNode(_el_0);
+  }
+
+  @override
+  void detectChangesInternal() {
+    final local_value = import8.unsafeCast<int>(this.locals['\$implicit']);
+    this._textBinding_1.updateText(import16.interpolate0(local_value));
+  }
+}
+
+import12.EmbeddedView<void> viewFactory_NestedNgForComponent2(import13.RenderView parentView, int parentIndex) {
+  return _ViewNestedNgForComponent2(parentView, parentIndex);
+}
+
+final List<dynamic> styles$NestedNgForComponentHost = const [];
+
+// Host for component NestedNgForComponent in asset:_goldens/test/_files/directives/nested_ng_for.dart (changeDetection: Default)
+class _ViewNestedNgForComponentHost0 extends import17.HostView<import1.NestedNgForComponent> {
+  @override
+  void build() {
+    // Child component NestedNgForComponent in asset:_goldens/test/_files/directives/nested_ng_for.dart (changeDetection: Default)
+    this.componentView = ViewNestedNgForComponent0(this, 0);
+    final _el_0 = this.componentView.rootElement;
+    this.component = import1.NestedNgForComponent();
+    this.initRootNode(_el_0);
+  }
+}
+
+import17.HostView<import1.NestedNgForComponent> viewFactory_NestedNgForComponentHost0() {
+  return _ViewNestedNgForComponentHost0();
 }
 
 var _visited = false;

@@ -1,17 +1,17 @@
+import 'package:analyzer/dart/element/type.dart';
 import 'package:source_span/source_span.dart';
-import 'package:angular/src/compiler/view_compiler/parse_utils.dart'
-    show handlerTypeFromExpression, HandlerType;
+import 'package:angular/src/compiler/output/convert.dart';
 
-import '../core/security.dart';
 import 'compile_metadata.dart'
     show
         CompileDirectiveMetadata,
         CompileProviderMetadata,
         CompileTokenMetadata,
         CompileTypeMetadata;
-import 'expression_parser/ast.dart' show AST;
+import 'expression_parser/ast.dart' show ASTWithSource;
 import 'i18n/message.dart';
 import 'output/output_ast.dart' show OutputType;
+import 'security.dart';
 
 /// An Abstract Syntax Tree node representing part of a parsed Angular template.
 abstract class TemplateAst {
@@ -19,7 +19,7 @@ abstract class TemplateAst {
   SourceSpan get sourceSpan;
 
   /// Visit this node and possibly transform it.
-  R visit<R, C>(TemplateAstVisitor<R, C> visitor, C context);
+  R visit<R, C, CO extends C>(TemplateAstVisitor<R, C> visitor, CO context);
 }
 
 /// A segment of text within the template.
@@ -30,19 +30,21 @@ class TextAst implements TemplateAst {
 
   TextAst(this.value, this.ngContentIndex, this.sourceSpan);
 
-  R visit<R, C>(TemplateAstVisitor<R, C> visitor, C context) =>
+  @override
+  R visit<R, C, CO extends C>(TemplateAstVisitor<R, C> visitor, CO context) =>
       visitor.visitText(this, context);
 }
 
 /// A bound expression within the text of a template.
 class BoundTextAst implements TemplateAst {
-  final AST value;
+  final ASTWithSource value;
   final int ngContentIndex;
   final SourceSpan sourceSpan;
 
   BoundTextAst(this.value, this.ngContentIndex, this.sourceSpan);
 
-  R visit<R, C>(TemplateAstVisitor<R, C> visitor, C context) =>
+  @override
+  R visit<R, C, CO extends C>(TemplateAstVisitor<R, C> visitor, CO context) =>
       visitor.visitBoundText(this, context);
 }
 
@@ -55,7 +57,7 @@ class I18nTextAst implements TemplateAst {
   I18nTextAst(this.value, this.ngContentIndex, this.sourceSpan);
 
   @override
-  R visit<R, C>(TemplateAstVisitor<R, C> visitor, C context) =>
+  R visit<R, C, CO extends C>(TemplateAstVisitor<R, C> visitor, CO context) =>
       visitor.visitI18nText(this, context);
 }
 
@@ -83,17 +85,19 @@ class LiteralAttributeValue implements AttributeValue<String> {
 /// A plain attribute on an element.
 class AttrAst implements TemplateAst {
   final String name;
-  final AttributeValue value;
+  final AttributeValue<Object> value;
   final SourceSpan sourceSpan;
 
   AttrAst(this.name, this.value, this.sourceSpan);
 
-  R visit<R, C>(TemplateAstVisitor<R, C> visitor, C context) =>
+  @override
+  R visit<R, C, CO extends C>(TemplateAstVisitor<R, C> visitor, CO context) =>
       visitor.visitAttr(this, context);
 }
 
 /// A binding for an element property (e.g. [property]='expression').
 class BoundElementPropertyAst implements TemplateAst {
+  final String namespace;
   final String name;
   final PropertyBindingType type;
   final BoundValue value;
@@ -101,10 +105,11 @@ class BoundElementPropertyAst implements TemplateAst {
   final SourceSpan sourceSpan;
   final TemplateSecurityContext securityContext;
 
-  BoundElementPropertyAst(this.name, this.type, this.securityContext,
-      this.value, this.unit, this.sourceSpan);
+  BoundElementPropertyAst(this.namespace, this.name, this.type,
+      this.securityContext, this.value, this.unit, this.sourceSpan);
 
-  R visit<R, C>(TemplateAstVisitor<R, C> visitor, C context) =>
+  @override
+  R visit<R, C, CO extends C>(TemplateAstVisitor<R, C> visitor, CO context) =>
       visitor.visitElementProperty(this, context);
 }
 
@@ -118,15 +123,30 @@ abstract class ElementProviderUsage {
 /// A binding for an element event (e.g. (event)='handler()').
 class BoundEventAst implements TemplateAst {
   final String name;
-  final AST handler;
+  final EventHandler handler;
   final SourceSpan sourceSpan;
 
   BoundEventAst(this.name, this.handler, this.sourceSpan);
 
-  R visit<R, C>(TemplateAstVisitor<R, C> visitor, C context) =>
+  @override
+  R visit<R, C, CO extends C>(TemplateAstVisitor<R, C> visitor, CO context) =>
       visitor.visitEvent(this, context);
+}
 
-  HandlerType get handlerType => handlerTypeFromExpression(handler);
+/// An event handler expression, with addition metadata.
+class EventHandler {
+  final ASTWithSource expression;
+
+  /// An optional directive class.
+  ///
+  /// This is only set with this EventHandler corresponds to a "HostListener" on
+  /// the specified Directive.
+  ///
+  /// Otherwise, it is assumed that the context of the event handler is the
+  /// default Component currently being compiled.
+  final CompileDirectiveMetadata hostDirective;
+
+  EventHandler(this.expression, [this.hostDirective]);
 }
 
 /// A reference declaration on an element (e.g. #someName='expression').
@@ -137,7 +157,8 @@ class ReferenceAst implements TemplateAst {
 
   ReferenceAst(this.name, this.value, this.sourceSpan);
 
-  R visit<R, C>(TemplateAstVisitor<R, C> visitor, C context) =>
+  @override
+  R visit<R, C, CO extends C>(TemplateAstVisitor<R, C> visitor, CO context) =>
       visitor.visitReference(this, context);
 }
 
@@ -153,14 +174,17 @@ class VariableAst implements TemplateAst {
   /// Optional type for optimizing generated code if [value] references a local.
   ///
   /// Locals are stored in a dynamic map, thus retain no type annotation. If
-  /// [type] is non-null, it's used to generate a type annotation for the local
-  /// variable declaration.
-  OutputType type;
+  /// [dartType] is non-null, it's used to generate a type annotation for the
+  /// local variable declaration.
+  DartType dartType;
+
+  OutputType get type => fromDartType(dartType, resolveBounds: false);
 
   VariableAst(this.name, String value, this.sourceSpan)
       : value = value != null && value.isNotEmpty ? value : implicitValue;
 
-  R visit<R, C>(TemplateAstVisitor<R, C> visitor, C context) =>
+  @override
+  R visit<R, C, CO extends C>(TemplateAstVisitor<R, C> visitor, CO context) =>
       visitor.visitVariable(this, context);
 }
 
@@ -194,7 +218,8 @@ class ElementAst implements TemplateAst {
   bool get hasViewContainer =>
       elementProviderUsage?.requiresViewContainer ?? false;
 
-  R visit<R, C>(TemplateAstVisitor<R, C> visitor, C context) =>
+  @override
+  R visit<R, C, CO extends C>(TemplateAstVisitor<R, C> visitor, CO context) =>
       visitor.visitElement(this, context);
 }
 
@@ -206,14 +231,13 @@ class NgContainerAst implements TemplateAst {
   NgContainerAst(this.children, this.sourceSpan);
 
   @override
-  R visit<R, C>(TemplateAstVisitor<R, C> visitor, C context) =>
+  R visit<R, C, CO extends C>(TemplateAstVisitor<R, C> visitor, CO context) =>
       visitor.visitNgContainer(this, context);
 }
 
 /// A <template> element included in an Angular template.
 class EmbeddedTemplateAst implements TemplateAst {
   final List<AttrAst> attrs;
-  final List<BoundEventAst> outputs;
   final List<ReferenceAst> references;
   final List<VariableAst> variables;
   final List<DirectiveAst> directives;
@@ -226,7 +250,6 @@ class EmbeddedTemplateAst implements TemplateAst {
 
   EmbeddedTemplateAst(
       this.attrs,
-      this.outputs,
       this.references,
       this.variables,
       this.directives,
@@ -247,7 +270,8 @@ class EmbeddedTemplateAst implements TemplateAst {
       // See https://github.com/dart-lang/angular/issues/1539.
       hasDeferredComponent;
 
-  R visit<R, C>(TemplateAstVisitor<R, C> visitor, C context) =>
+  @override
+  R visit<R, C, CO extends C>(TemplateAstVisitor<R, C> visitor, CO context) =>
       visitor.visitEmbeddedTemplate(this, context);
 }
 
@@ -256,7 +280,7 @@ abstract class BoundValue {}
 
 /// A bound expression.
 class BoundExpression implements BoundValue {
-  final AST expression;
+  final ASTWithSource expression;
 
   BoundExpression(this.expression);
 }
@@ -270,7 +294,8 @@ class BoundI18nMessage implements BoundValue {
 
 /// A directive property binding.
 class BoundDirectivePropertyAst implements TemplateAst {
-  /// The name of the property declared on the directive class.
+  /// The name of the property member (field or setter) declared on the
+  /// directive class.
   ///
   /// For example, "name" in
   ///
@@ -280,7 +305,7 @@ class BoundDirectivePropertyAst implements TemplateAst {
   ///   String name;
   /// }
   /// ```
-  final String directiveName;
+  final String memberName;
 
   /// The name of the input, optionally declared by an input annotation.
   ///
@@ -291,35 +316,76 @@ class BoundDirectivePropertyAst implements TemplateAst {
   ///   String name;
   /// }
   ///
-  /// If no binding name is specified, this defaults to [directiveName].
+  /// If no binding name is specified, this defaults to [memberName].
   final String templateName;
   final BoundValue value;
   final SourceSpan sourceSpan;
 
   BoundDirectivePropertyAst(
-    this.directiveName,
+    this.memberName,
     this.templateName,
     this.value,
     this.sourceSpan,
   );
 
   @override
-  R visit<R, C>(TemplateAstVisitor<R, C> visitor, C context) =>
+  R visit<R, C, CO extends C>(TemplateAstVisitor<R, C> visitor, CO context) =>
       visitor.visitDirectiveProperty(this, context);
+}
+
+/// An event binding that matches an @Output declared on the directive.
+///
+/// These can be either event handlers defined in the template, or a
+/// @HostListener defined in a *different* Directive.
+class BoundDirectiveEventAst implements TemplateAst {
+  /// The name of the output member (field or getter) declared on the directive
+  /// class.
+  ///
+  /// For example, "onChange" in
+  ///
+  /// ```
+  /// class User {
+  ///   @Input('change')
+  ///   Stream get onChange;
+  /// }
+  /// ```
+  final String memberName;
+
+  /// The name of the output, optionally declared by an output annotation.
+  ///
+  /// For example, "change" in
+  ///
+  /// class User {
+  ///   @Input('change')
+  ///   Stream get onChange;
+  /// }
+  ///
+  /// If no binding name is specified, this defaults to [memberName].
+  final String templateName;
+  final EventHandler handler;
+  final SourceSpan sourceSpan;
+
+  BoundDirectiveEventAst(
+      this.memberName, this.templateName, this.handler, this.sourceSpan);
+
+  @override
+  R visit<R, C, CO extends C>(TemplateAstVisitor<R, C> visitor, CO context) =>
+      visitor.visitDirectiveEvent(this, context);
 }
 
 /// A directive declared on an element.
 class DirectiveAst implements TemplateAst {
   final CompileDirectiveMetadata directive;
   final List<BoundDirectivePropertyAst> inputs;
-  final List<BoundElementPropertyAst> hostProperties;
-  final List<BoundEventAst> hostEvents;
+  final List<BoundDirectiveEventAst> outputs;
   final SourceSpan sourceSpan;
 
-  DirectiveAst(this.directive, this.inputs, this.hostProperties,
-      this.hostEvents, this.sourceSpan);
+  DirectiveAst(this.directive, {this.inputs, this.outputs, this.sourceSpan});
 
-  R visit<R, C>(TemplateAstVisitor<R, C> visitor, C context) =>
+  bool get hasHostProperties => directive.hostProperties.isNotEmpty;
+
+  @override
+  R visit<R, C, CO extends C>(TemplateAstVisitor<R, C> visitor, CO context) =>
       visitor.visitDirective(this, context);
 }
 
@@ -342,13 +408,14 @@ class ProviderAst implements TemplateAst {
   /// access the provider and return it.
   final bool eager;
 
-  /// False if provider doesn't support injection into dynamically loaded
-  /// children.
+  /// Whether this provider is referenced outside of `AppView.build()`.
   ///
-  /// Typically TemplateRef, NgIf don't need to be injected into dynamic
-  /// children and this flag allows injectorGetInternal to create more
-  /// optimal code by skipping these.
-  final bool dynamicallyReachable;
+  /// This is true for anything that is change detected, has lifecycle hooks,
+  /// matches a dynamically updated query, or is referenced in the template.
+  ///
+  /// While the intent of this field is to generalize the concept, in reality
+  /// it's only ever false for `TemplateRef` when not queried or referenced.
+  final bool isReferencedOutsideBuild;
 
   /// Whether the provider is visible for injection.
   ///
@@ -368,12 +435,13 @@ class ProviderAst implements TemplateAst {
     this.providerType,
     this.sourceSpan, {
     this.eager,
-    this.dynamicallyReachable = true,
+    this.isReferencedOutsideBuild = true,
     this.typeArgument,
-    this.visibleForInjection = true,
+    this.visibleForInjection = false,
   });
 
-  R visit<R, C>(TemplateAstVisitor<R, C> visitor, C context) =>
+  @override
+  R visit<R, C, CO extends C>(TemplateAstVisitor<R, C> visitor, CO context) =>
       visitor.visitProvider(this, context);
 
   /// Returns true if the provider is used by a constructor in a child
@@ -414,7 +482,8 @@ class NgContentAst implements TemplateAst {
 
   NgContentAst(this.index, this.ngContentIndex, this.sourceSpan);
 
-  R visit<R, C>(TemplateAstVisitor<R, C> visitor, C context) =>
+  @override
+  R visit<R, C, CO extends C>(TemplateAstVisitor<R, C> visitor, CO context) =>
       visitor.visitNgContent(this, context);
 }
 
@@ -448,6 +517,7 @@ abstract class TemplateAstVisitor<R, C> {
   R visitText(TextAst ast, C context);
   R visitDirective(DirectiveAst ast, C context);
   R visitDirectiveProperty(BoundDirectivePropertyAst ast, C context);
+  R visitDirectiveEvent(BoundDirectiveEventAst ast, C context);
   R visitProvider(ProviderAst providerAst, C context);
   R visitI18nText(I18nTextAst ast, C context);
 }

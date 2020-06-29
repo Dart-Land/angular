@@ -1,6 +1,19 @@
-import 'package:angular_compiler/cli.dart';
-
 enum TokenType { Character, Identifier, Keyword, String, Operator, Number }
+
+class LexerError extends Error {
+  String input;
+  int position;
+  String message;
+
+  String get messageWithPosition =>
+      '$message at offset $position of expression';
+
+  @override
+  toString() =>
+      'Lexer Error: $message at column $position in expression [$input]';
+
+  LexerError(this.message, this.position, this.input);
+}
 
 class Lexer {
   List<Token> tokenize(String text) {
@@ -230,7 +243,9 @@ class _Scanner {
       case $BAR:
         return scanComplexOperator(start, '|', $BAR, '|');
       case $NBSP:
-        while (isWhitespace(this.peek)) advance();
+        while (isWhitespace(this.peek)) {
+          advance();
+        }
         return scanToken();
     }
     error('Unexpected character [${String.fromCharCode(peek)}]', 0);
@@ -266,9 +281,11 @@ class _Scanner {
   Token scanIdentifier() {
     int startIndex = index;
     advance();
-    while (isIdentifierPart(peek)) advance();
+    while (isIdentifierPart(peek)) {
+      advance();
+    }
     String str = input.substring(startIndex, index);
-    if (KEYWORDS.contains(str)) {
+    if (keywords.contains(str)) {
       return newKeywordToken(startIndex, str);
     } else {
       return newIdentifierToken(startIndex, str);
@@ -329,8 +346,7 @@ class _Scanner {
 
   void error(String message, int offset) {
     int position = this.index + offset;
-    throw BuildError(
-        'Lexer Error: $message at column $position in expression [$input]');
+    throw LexerError(message, position, input);
   }
 
   int _consumeEscape() {
@@ -392,7 +408,7 @@ bool isIdentifierStart(num code) =>
     (code == $$);
 
 bool isIdentifier(String input) {
-  if (input.length == 0) return false;
+  if (input.isEmpty) return false;
   var scanner = _Scanner(input);
   if (!isIdentifierStart(scanner.peek)) return false;
   scanner.advance();
@@ -436,34 +452,7 @@ int unescape(int code) {
   }
 }
 
-final OPERATORS = Set<String>.from(const [
-  '+',
-  '-',
-  '*',
-  '/',
-  '%',
-  '^',
-  '=',
-  '==',
-  '!=',
-  '===',
-  '!==',
-  '<',
-  '>',
-  '<=',
-  '>=',
-  '&&',
-  '||',
-  '&',
-  '|',
-  '!',
-  '?',
-  '#',
-  '?.',
-  '??',
-]);
-
-final KEYWORDS = Set<String>.from(const [
+const keywords = {
   'var',
   'let',
   'null',
@@ -472,4 +461,4 @@ final KEYWORDS = Set<String>.from(const [
   'false',
   'if',
   'else',
-]);
+};

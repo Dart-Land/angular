@@ -169,15 +169,15 @@ class _RuntimeInjector extends HierarchicalInjector
   /// If [deps] are provided, they are used, otherwise the reflector is checked.
   List<Object> _resolveArgs(Object token, [List<Object> deps]) {
     deps ??= reflector.getDependencies(token);
-    final resolved = List(deps.length);
+    final resolved = List<Object>(deps.length);
     for (var i = 0, l = resolved.length; i < l; i++) {
       final dep = deps[i];
       Object result;
-      if (dep is List) {
+      if (dep is List<Object>) {
         result = _resolveMeta(dep);
       } else {
         errors.debugInjectorEnter(dep);
-        result = inject(dep);
+        result = get(dep);
         errors.debugInjectorLeave(dep);
       }
       // We don't check to see if this failed otherwise, because this is an
@@ -233,7 +233,7 @@ class _RuntimeInjector extends HierarchicalInjector
     } else if (isHost) {
       result = injectFromParentOptional(token, orElse);
     } else {
-      result = injectOptionalUntyped(token, orElse);
+      result = provideUntyped(token, orElse);
     }
     if (identical(result, throwIfNotFound)) {
       throwsNotFound(this, token);
@@ -249,11 +249,23 @@ class _RuntimeInjector extends HierarchicalInjector
   }
 
   @override
-  Object useExisting(Object to) => inject(to);
+  Object useExisting(Object to) => get(to);
 
   @override
   Object useFactory(Function factory, {List<Object> deps}) {
-    return Function.apply(factory, _resolveArgs(factory, deps));
+    final resolvedArgs = _resolveArgs(factory, deps);
+    // This call will fail at runtime (a non-zero arg function w/ 1+ args).
+    assert(
+        _functionHasNoRequiredArguments(factory) || resolvedArgs.isNotEmpty,
+        'Could not resolve dependencies for factory function $factory. This '
+        'is is usually a sign of an omitted @Injectable. Consider migrating '
+        'to @GeneratedInjector (and "runApp") or add the missing annotation '
+        'for the time being.');
+    return Function.apply(factory, resolvedArgs);
+  }
+
+  static bool _functionHasNoRequiredArguments(Function function) {
+    return function is void Function();
   }
 
   @override
@@ -289,16 +301,16 @@ void _assertProviders(Iterable<Provider<void>> providers) {
 void _throwUnsupportedProvider(Provider<void> provider) {
   throw UnsupportedError(
     'Could not create a provider for token "${provider.token}"!\n\n'
-        'ReflectiveInjector.resolveStaticAndCreate only supports some providers.\n'
-        '\n'
-        '* FactoryProvider (or Provider(useFactory: ...)) with deps: [ ... ] set\n'
-        '* ValueProvider (or Provider(useValue: ...))\n'
-        '* ExistingProvider (or Provider(useExisting: ...))\n'
-        '\n'
-        'Specifically, any providers that require looking up factory functions or '
-        'argument information for factory functions at runtime are not supported '
-        'since they would defeat the tree-shaking improvements of "runApp".\n\n'
-        'See https://github.com/dart-lang/angular/issues/1426 for details',
+    'ReflectiveInjector.resolveStaticAndCreate only supports some providers.\n'
+    '\n'
+    '* FactoryProvider (or Provider(useFactory: ...)) with deps: [ ... ] set\n'
+    '* ValueProvider (or Provider(useValue: ...))\n'
+    '* ExistingProvider (or Provider(useExisting: ...))\n'
+    '\n'
+    'Specifically, any providers that require looking up factory functions or '
+    'argument information for factory functions at runtime are not supported '
+    'since they would defeat the tree-shaking improvements of "runApp".\n\n'
+    'See https://github.com/dart-lang/angular/issues/1426 for details',
   );
 }
 
@@ -337,7 +349,7 @@ _FlatProviders _flattenProviders(
   multiProviders ??= <Provider<Object>>[];
   for (var i = 0, len = providersOrLists.length; i < len; i++) {
     final item = providersOrLists[i];
-    if (item is List) {
+    if (item is List<Object>) {
       _flattenProviders(item, allProviders, multiProviders);
     } else if (item is Provider) {
       if (_isMultiProvider(item)) {

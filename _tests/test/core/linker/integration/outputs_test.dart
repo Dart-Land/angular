@@ -80,7 +80,7 @@ void main() {
         contains("isn't assignable to expected type"),
       )),
     );
-  });
+  }, skip: 'https://github.com/dart-lang/sdk/issues/36832');
 }
 
 @Directive(
@@ -148,7 +148,7 @@ class DirectiveWithTwoWayBinding {
   var control;
 
   @Output()
-  get controlChange => _streamController.stream;
+  Stream<String> get controlChange => _streamController.stream;
 
   triggerChange(String value) {
     _streamController.add(value);
@@ -224,7 +224,7 @@ class TestPreventDefaultComponent {}
 )
 class OutputComponent {
   @Output()
-  Stream<String> output = new Stream.empty();
+  Stream<String> output = Stream.empty();
 }
 
 @Component(

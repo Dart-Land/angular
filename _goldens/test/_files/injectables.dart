@@ -24,21 +24,17 @@ import 'package:angular/angular.dart';
   ],
 )
 class InjectableComponent {
-  final BaseService service;
-
-  // ignore: deprecated_member_use
+  final String service;
   final InjectableService _injectableService;
   final bool isTest;
 
   InjectableComponent(
       @Attribute('baseService') @optional this.service,
-      // ignore: deprecated_member_use
       @Optional() InjectableService injectableService,
       @Inject(testToken) this.isTest,
       [String foo])
       : _injectableService = injectableService;
 
-  // ignore: deprecated_member_use
   InjectableService get injectableService => _injectableService;
 }
 

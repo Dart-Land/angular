@@ -1,6 +1,7 @@
 import 'package:analyzer/dart/constant/value.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/type.dart';
+import 'package:angular_compiler/cli.dart';
 import 'package:meta/meta.dart';
 import 'package:source_gen/source_gen.dart';
 
@@ -35,8 +36,8 @@ class ProviderReader {
       throw ArgumentError.notNull();
     }
     if (isType(o)) {
-      // Represents "Foo", which is supported short-hand for "Provider(Foo)".
-      return _parseType(o);
+      // Represents "Foo", which is legacy short-hand for "ClassProvider(Foo)".
+      return _parseTypeAsImplicitClassProvider(o);
     }
     if (!isProvider(o)) {
       final typeName = getTypeName(o.type);
@@ -87,7 +88,7 @@ class ProviderReader {
       }
       return _parseUseClass(token, o, reader.read('token').typeValue.element);
     }
-    throw UnsupportedError('Could not parse provider: $o.');
+    throw UnsupportedProviderException(o, 'Could not parse provider');
   }
 
   TypeLink _actualProviderType(
@@ -141,7 +142,8 @@ class ProviderReader {
     TokenElement token,
     ConstantReader provider,
   ) {
-    final factoryElement = provider.read('useFactory').objectValue.type.element;
+    final objectValue = provider.read('useFactory').objectValue;
+    final factoryElement = objectValue.toFunctionValue();
     final manualDeps = provider.read('deps');
     return UseFactoryProviderElement(
       token,
@@ -172,16 +174,19 @@ class ProviderReader {
   }
 
   /// Returns a provider element representing a single type.
-  ProviderElement _parseType(DartObject o) {
+  ProviderElement _parseTypeAsImplicitClassProvider(DartObject o) {
     final reader = ConstantReader(o);
-    final clazz = reader.typeValue.element as ClassElement;
-    final token = linkTypeOf(clazz.type);
-    return UseClassProviderElement(
-      TypeTokenElement(token),
-      linkTypeOf(typeArgumentOf(o)),
-      token,
-      dependencies: _dependencyReader.parseDependencies(clazz),
-    );
+    final element = reader.typeValue.element;
+    if (element is ClassElement) {
+      final token = linkTypeOf(element.type);
+      return UseClassProviderElement(
+        TypeTokenElement(token),
+        linkTypeOf(typeArgumentOf(o)),
+        token,
+        dependencies: _dependencyReader.parseDependencies(element),
+      );
+    }
+    return BuildError.throwForElement(element, 'Not a class element');
   }
 }
 
@@ -349,4 +354,11 @@ class NullFactoryException implements Exception {
   final DartObject constant;
 
   const NullFactoryException(this.constant);
+}
+
+class UnsupportedProviderException implements Exception {
+  final DartObject constant;
+  final String message;
+
+  const UnsupportedProviderException(this.constant, this.message);
 }

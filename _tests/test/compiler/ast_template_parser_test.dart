@@ -1,10 +1,12 @@
 @TestOn('vm')
 import 'dart:async';
 
+import 'package:logging/logging.dart';
+import 'package:term_glyph/term_glyph.dart' as term_glyph;
+import 'package:test/test.dart';
 import 'package:_tests/test_util.dart';
-import 'package:angular/src/compiler/ast_template_parser.dart';
+import 'package:angular/src/compiler/analyzed_class.dart';
 import 'package:angular/src/compiler/compile_metadata.dart';
-import 'package:angular/src/compiler/compiler_utils.dart';
 import 'package:angular/src/compiler/expression_parser/lexer.dart';
 import 'package:angular/src/compiler/expression_parser/parser.dart';
 import 'package:angular/src/compiler/identifiers.dart'
@@ -14,9 +16,9 @@ import 'package:angular/src/compiler/schema/dom_element_schema_registry.dart';
 import 'package:angular/src/compiler/schema/element_schema_registry.dart'
     show ElementSchemaRegistry;
 import 'package:angular/src/compiler/template_ast.dart';
+import 'package:angular/src/compiler/template_parser/ast_template_parser.dart';
+import 'package:angular/src/facade/lang.dart' show jsSplit;
 import 'package:angular_compiler/cli.dart';
-import 'package:logging/logging.dart';
-import 'package:test/test.dart';
 
 import 'schema_registry_mock.dart' show MockSchemaRegistry;
 import 'template_humanizer_util.dart';
@@ -58,6 +60,10 @@ class ArrayConsole {
 }
 
 void main() {
+  setUpAll(() {
+    term_glyph.ascii = true;
+  });
+
   final console = ArrayConsole();
   final ngIf = createCompileDirectiveMetadata(
       selector: '[ngIf]',
@@ -90,7 +96,12 @@ void main() {
       CompilerFlags(),
     );
     _parse = (template, [directives, pipes]) => parser.parse(
-        component, template, directives ?? [], pipes ?? [], 'TestComp');
+        component,
+        template,
+        directives ?? [],
+        pipes ?? [],
+        'TestComp',
+        'path://to/test-comp');
   }
 
   group('TemplateParser', () {
@@ -252,27 +263,35 @@ void main() {
           expect(
               () => parse('<p [atTr.foo]></p>', []),
               throwsWith('Template parse errors:\n'
-                  'line 1, column 4 of TestComp: ParseErrorLevel.FATAL: Invalid property name \'atTr.foo\'\n'
-                  '<p [atTr.foo]></p>\n'
-                  '   ^^^^^^^^^^'));
+                  'line 1, column 4 of path://to/test-comp: ParseErrorLevel.FATAL: Invalid property name \'atTr.foo\'\n'
+                  '  ,\n'
+                  '1 | <p [atTr.foo]></p>\n'
+                  '  |    ^^^^^^^^^^\n'
+                  "  '"));
           expect(
               () => parse('<p [sTyle.foo]></p>', []),
               throwsWith('Template parse errors:\n'
-                  'line 1, column 4 of TestComp: ParseErrorLevel.FATAL: Invalid property name \'sTyle.foo\'\n'
-                  '<p [sTyle.foo]></p>\n'
-                  '   ^^^^^^^^^^^'));
+                  'line 1, column 4 of path://to/test-comp: ParseErrorLevel.FATAL: Invalid property name \'sTyle.foo\'\n'
+                  '  ,\n'
+                  '1 | <p [sTyle.foo]></p>\n'
+                  '  |    ^^^^^^^^^^^\n'
+                  "  '"));
           expect(
               () => parse('<p [Class.foo]></p>', []),
               throwsWith('Template parse errors:\n'
-                  'line 1, column 4 of TestComp: ParseErrorLevel.FATAL: Invalid property name \'Class.foo\'\n'
-                  '<p [Class.foo]></p>\n'
-                  '   ^^^^^^^^^^^'));
+                  'line 1, column 4 of path://to/test-comp: ParseErrorLevel.FATAL: Invalid property name \'Class.foo\'\n'
+                  '  ,\n'
+                  '1 | <p [Class.foo]></p>\n'
+                  '  |    ^^^^^^^^^^^\n'
+                  "  '"));
           expect(
               () => parse('<p [bar.foo]></p>', []),
               throwsWith('Template parse errors:\n'
-                  'line 1, column 4 of TestComp: ParseErrorLevel.FATAL: Invalid property name \'bar.foo\'\n'
-                  '<p [bar.foo]></p>\n'
-                  '   ^^^^^^^^^'));
+                  'line 1, column 4 of path://to/test-comp: ParseErrorLevel.FATAL: Invalid property name \'bar.foo\'\n'
+                  '  ,\n'
+                  '1 | <p [bar.foo]></p>\n'
+                  '  |    ^^^^^^^^^\n'
+                  "  '"));
         });
 
         test(
@@ -326,9 +345,11 @@ void main() {
           expect(
               () => parse('<div (window:event)="v"></div>', []),
               throwsWith('Template parse errors:\n'
-                  'line 1, column 6 of TestComp: ParseErrorLevel.FATAL: ":" is not allowed in event names: window:event\n'
-                  '<div (window:event)="v"></div>\n'
-                  '     ^^^^^^^^^^^^^^^^^^'));
+                  'line 1, column 6 of path://to/test-comp: ParseErrorLevel.FATAL: ":" is not allowed in event names: window:event\n'
+                  '  ,\n'
+                  '1 | <div (window:event)="v"></div>\n'
+                  '  |      ^^^^^^^^^^^^^^^^^^\n'
+                  "  '"));
         });
 
         test(
@@ -371,8 +392,8 @@ void main() {
           expect(
               humanizeTplAst(parse('<template (e)="f"></template>', [dirA])), [
             [EmbeddedTemplateAst],
-            [BoundEventAst, 'e', null, 'f'],
-            [DirectiveAst, dirA]
+            [DirectiveAst, dirA],
+            [BoundDirectiveEventAst, 'e', 'f'],
           ]);
         });
       });
@@ -405,9 +426,11 @@ void main() {
           expect(console.warnings, [
             [
               'Template parse warnings:\n'
-                  'line 1, column 6 of TestComp: ParseErrorLevel.WARNING: "bindon-" for properties/events is no longer supported. Use "[()]" instead!\n'
-                  '<div bindon-prop="v"></div>\n'
-                  '     ^^^^^^^^^^^^^^^'
+                  'line 1, column 6 of path://to/test-comp: ParseErrorLevel.WARNING: "bindon-" for properties/events is no longer supported. Use "[()]" instead!\n'
+                  '  ,\n'
+                  '1 | <div bindon-prop="v"></div>\n'
+                  '  |      ^^^^^^^^^^^^^^^\n'
+                  "  '"
             ].join('\n')
           ]);
         });
@@ -670,8 +693,7 @@ void main() {
 
         test('should provide a directive', () {
           var dirA = createDir('[dirA]');
-          ElementAst elAst =
-              (parse('<div dirA></div>', [dirA])[0] as ElementAst);
+          ElementAst elAst = parse('<div dirA></div>', [dirA])[0] as ElementAst;
           expect(elAst.providers, hasLength(1));
           expect(elAst.providers[0].providerType, ProviderAstType.Directive);
           expect(elAst.providers[0].providers[0].useClass, dirA.type);
@@ -680,8 +702,7 @@ void main() {
         test('should use the public providers of a directive', () {
           var provider = createProvider('service');
           var dirA = createDir('[dirA]', providers: [provider]);
-          ElementAst elAst =
-              (parse('<div dirA></div>', [dirA])[0] as ElementAst);
+          ElementAst elAst = parse('<div dirA></div>', [dirA])[0] as ElementAst;
           expect(elAst.providers, hasLength(2));
           expect(
               elAst.providers[1].providerType, ProviderAstType.PublicService);
@@ -692,7 +713,7 @@ void main() {
           var provider = createProvider('service');
           var comp = createDir('my-comp', viewProviders: [provider]);
           ElementAst elAst =
-              (parse('<my-comp></my-comp>', [comp])[0] as ElementAst);
+              parse('<my-comp></my-comp>', [comp])[0] as ElementAst;
           expect(elAst.providers, hasLength(2));
           expect(
               elAst.providers[1].providerType, ProviderAstType.PrivateService);
@@ -706,7 +727,7 @@ void main() {
           var dirA = createDir('[dirA]', providers: [provider0, provider1]);
           var dirB = createDir('[dirB]', providers: [provider2]);
           ElementAst elAst =
-              (parse('<div dirA dirB></div>', [dirA, dirB])[0] as ElementAst);
+              parse('<div dirA dirB></div>', [dirA, dirB])[0] as ElementAst;
           expect(elAst.providers, hasLength(4));
           expect(elAst.providers[2].providers,
               orderedEquals([provider0, provider2]));
@@ -720,7 +741,7 @@ void main() {
           var dirA = createDir('[dirA]', providers: [provider1, provider2]);
           var dirB = createDir('[dirB]', providers: [provider3]);
           ElementAst elAst =
-              (parse('<div dirA dirB></div>', [dirA, dirB])[0] as ElementAst);
+              parse('<div dirA dirB></div>', [dirA, dirB])[0] as ElementAst;
           expect(elAst.providers, hasLength(4));
           expect(elAst.providers[2].providers, orderedEquals([provider3]));
           expect(elAst.providers[3].providers, orderedEquals([provider2]));
@@ -731,8 +752,8 @@ void main() {
           var dirProvider = createProvider('service0');
           var comp = createDir('my-comp', providers: [compProvider]);
           var dirA = createDir('[dirA]', providers: [dirProvider]);
-          ElementAst elAst = (parse('<my-comp dirA></my-comp>', [dirA, comp])[0]
-              as ElementAst);
+          ElementAst elAst =
+              parse('<my-comp dirA></my-comp>', [dirA, comp])[0] as ElementAst;
           expect(elAst.providers, hasLength(3));
           expect(elAst.providers[2].providers, orderedEquals([dirProvider]));
         });
@@ -742,8 +763,8 @@ void main() {
           var dirProvider = createProvider('service0');
           var comp = createDir('my-comp', viewProviders: [viewProvider]);
           var dirA = createDir('[dirA]', providers: [dirProvider]);
-          ElementAst elAst = (parse('<my-comp dirA></my-comp>', [dirA, comp])[0]
-              as ElementAst);
+          ElementAst elAst =
+              parse('<my-comp dirA></my-comp>', [dirA, comp])[0] as ElementAst;
           expect(elAst.providers, hasLength(3));
           expect(elAst.providers[2].providers, orderedEquals([dirProvider]));
         });
@@ -752,7 +773,7 @@ void main() {
           var dirProvider = createProvider('type:my-comp');
           var comp = createDir('my-comp', providers: [dirProvider]);
           ElementAst elAst =
-              (parse('<my-comp></my-comp>', [comp])[0] as ElementAst);
+              parse('<my-comp></my-comp>', [comp])[0] as ElementAst;
           expect(elAst.providers, hasLength(1));
           expect(elAst.providers[0].providers, orderedEquals([dirProvider]));
         });
@@ -765,9 +786,11 @@ void main() {
           expect(
               () => parse('<div dirA dirB></div>', [dirA, dirB]),
               throwsWith('Template parse errors:\n'
-                  'line 1, column 1 of TestComp: ParseErrorLevel.FATAL: Mixing multi and non multi provider is not possible for token service0\n'
-                  '<div dirA dirB></div>\n'
-                  '^^^^^^^^^^^^^^^'));
+                  'line 1, column 1 of path://to/test-comp: ParseErrorLevel.FATAL: Mixing multi and non multi provider is not possible for token service0\n'
+                  '  ,\n'
+                  '1 | <div dirA dirB></div>\n'
+                  '  | ^^^^^^^^^^^^^^^\n'
+                  "  '"));
         });
 
         test('should sort providers by their DI order', () {
@@ -820,8 +843,8 @@ void main() {
           var dirA = createDir('[dirA]', providers: [provider0, provider1]);
           var dirB = createDir('[dirB]', deps: ['service0']);
           ElementAst elAst =
-              (parse('<div dirA><div dirB></div></div>', [dirA, dirB])[0]
-                  as ElementAst);
+              parse('<div dirA><div dirB></div></div>', [dirA, dirB])[0]
+                  as ElementAst;
           expect(elAst.providers, hasLength(3));
           expect(elAst.providers[0].providers[0].useClass, dirA.type);
           expect(elAst.providers[0].eager, true);
@@ -836,8 +859,7 @@ void main() {
           var provider1 = createProvider('service1');
           var dirA = createDir('[dirA]',
               providers: [provider0, provider1], queries: ['service0']);
-          ElementAst elAst =
-              (parse('<div dirA></div>', [dirA])[0] as ElementAst);
+          ElementAst elAst = parse('<div dirA></div>', [dirA])[0] as ElementAst;
           expect(elAst.providers, hasLength(3));
           expect(elAst.providers[0].providers[0].useClass, dirA.type);
           expect(elAst.providers[0].eager, true);
@@ -853,8 +875,8 @@ void main() {
           var dirA = createDir('[dirA]', providers: [provider0]);
           var dirB = createDir('[dirB]', deps: ['service0']);
           ElementAst elAst =
-              (parse('<div dirA><div *ngIf dirB></div></div>', [dirA, dirB])[0]
-                  as ElementAst);
+              parse('<div dirA><div *ngIf dirB></div></div>', [dirA, dirB])[0]
+                  as ElementAst;
           expect(elAst.providers, hasLength(2));
           expect(elAst.providers[0].providers[0].useClass, dirA.type);
           expect(elAst.providers[0].eager, true);
@@ -867,15 +889,16 @@ void main() {
           expect(
               () => parse('<div dirA></div>', [dirA]),
               throwsWith('Template parse errors:\n'
-                  'line 1, column 1 of TestComp: ParseErrorLevel.FATAL: No provider for provider0\n'
-                  '<div dirA></div>\n'
-                  '^^^^^^^^^^'));
+                  'line 1, column 1 of path://to/test-comp: ParseErrorLevel.FATAL: No provider for provider0\n'
+                  '  ,\n'
+                  '1 | <div dirA></div>\n'
+                  '  | ^^^^^^^^^^\n'
+                  "  '"));
         });
 
         test('should change missing @Self() that are optional to nulls', () {
           var dirA = createDir('[dirA]', deps: ['optional:self:provider0']);
-          ElementAst elAst =
-              (parse('<div dirA></div>', [dirA])[0] as ElementAst);
+          ElementAst elAst = parse('<div dirA></div>', [dirA])[0] as ElementAst;
           expect(elAst.providers[0].providers[0].deps[0].isValue, true);
           expect(elAst.providers[0].providers[0].deps[0].value, isNull);
         });
@@ -885,15 +908,16 @@ void main() {
           expect(
               () => parse('<div dirA></div>', [dirA]),
               throwsWith('Template parse errors:\n'
-                  'line 1, column 1 of TestComp: ParseErrorLevel.FATAL: No provider for provider0\n'
-                  '<div dirA></div>\n'
-                  '^^^^^^^^^^'));
+                  'line 1, column 1 of path://to/test-comp: ParseErrorLevel.FATAL: No provider for provider0\n'
+                  '  ,\n'
+                  '1 | <div dirA></div>\n'
+                  '  | ^^^^^^^^^^\n'
+                  "  '"));
         });
 
         test('should change missing @Host() that are optional to nulls', () {
           var dirA = createDir('[dirA]', deps: ['optional:host:provider0']);
-          ElementAst elAst =
-              (parse('<div dirA></div>', [dirA])[0] as ElementAst);
+          ElementAst elAst = parse('<div dirA></div>', [dirA])[0] as ElementAst;
           expect(elAst.providers[0].providers[0].deps[0].isValue, true);
           expect(elAst.providers[0].providers[0].deps[0].value, isNull);
         });
@@ -904,9 +928,12 @@ void main() {
           expect(
               () => parse('<div cycleDirective></div>', [cycle]),
               throwsWith('Template parse errors:\n'
-                  'line 1, column 1 of TestComp: ParseErrorLevel.FATAL: '
+                  'line 1, column 1 of path://to/test-comp: ParseErrorLevel.FATAL: '
                   'Cannot instantiate cyclic dependency! [cycleDirective]\n'
-                  '<div cycleDirective></div>\n'));
+                  '  ,\n'
+                  '1 | <div cycleDirective></div>\n'
+                  '  | ^^^^^^^^^^^^^^^^^^^^\n'
+                  "  '"));
         });
 
         test('should report missing @Host() deps in providers as errors', () {
@@ -914,9 +941,12 @@ void main() {
           expect(
               () => parse('<div needsHost></div>', [needsHost]),
               throwsWith('Template parse errors:\n'
-                  'line 1, column 1 of TestComp: '
+                  'line 1, column 1 of path://to/test-comp: '
                   'ParseErrorLevel.FATAL: No provider for service\n'
-                  '<div needsHost></div>\n'));
+                  '  ,\n'
+                  '1 | <div needsHost></div>\n'
+                  '  | ^^^^^^^^^^^^^^^\n'
+                  "  '"));
         });
 
         test('should report missing @Self() deps as errors', () {
@@ -929,10 +959,12 @@ void main() {
                     <div needsDirectiveFromSelf></div>
                   </div>''', [needsDirectiveFromSelf, simpleDirective]),
               throwsWith('Template parse errors:\n'
-                  'line 2, column 21 of TestComp: '
+                  'line 2, column 21 of path://to/test-comp: '
                   'ParseErrorLevel.FATAL: No provider for [simpleDirective]\n'
-                  '                    <div needsDirectiveFromSelf></div>\n'
-                  '                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^'));
+                  '  ,\n'
+                  '2 |                     <div needsDirectiveFromSelf></div>\n'
+                  '  |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n'
+                  "  '"));
         });
       });
 
@@ -957,9 +989,11 @@ void main() {
           expect(console.warnings, [
             [
               'Template parse warnings:\n'
-                  'line 1, column 6 of TestComp: ParseErrorLevel.WARNING: "ref-" for references is no longer supported. Use "#" instead!\n'
-                  '<div ref-a></div>\n'
-                  '     ^^^^^'
+                  'line 1, column 6 of path://to/test-comp: ParseErrorLevel.WARNING: "ref-" for references is no longer supported. Use "#" instead!\n'
+                  '  ,\n'
+                  '1 | <div ref-a></div>\n'
+                  '  |      ^^^^^\n'
+                  "  '"
             ].join('\n')
           ]);
         });
@@ -974,9 +1008,11 @@ void main() {
           expect(console.warnings, [
             [
               'Template parse warnings:\n'
-                  'line 1, column 6 of TestComp: ParseErrorLevel.WARNING: "var-" for references is no longer supported. Use "#" instead!\n'
-                  '<div var-a></div>\n'
-                  '     ^^^^^'
+                  'line 1, column 6 of path://to/test-comp: ParseErrorLevel.WARNING: "var-" for references is no longer supported. Use "#" instead!\n'
+                  '  ,\n'
+                  '1 | <div var-a></div>\n'
+                  '  |      ^^^^^\n'
+                  "  '"
             ].join('\n')
           ]);
         });
@@ -1014,27 +1050,33 @@ void main() {
           expect(
               () => parse('<div #a="dirA"></div>', []),
               throwsWith('Template parse errors:\n'
-                  'line 1, column 6 of TestComp: ParseErrorLevel.FATAL: There is no directive with "exportAs" set to "dirA"\n'
-                  '#a="dirA"\n'
-                  '^^^^^^^^^'));
+                  'line 1, column 6 of path://to/test-comp: ParseErrorLevel.FATAL: There is no directive with "exportAs" set to "dirA"\n'
+                  '  ,\n'
+                  '1 | #a="dirA"\n'
+                  '  | ^^^^^^^^^\n'
+                  "  '"));
         }, skip: 'Don\'t handle errors yet.');
 
         test('should report invalid reference names', () {
           expect(
               () => parse('<div #a-b></div>', []),
               throwsWith('Template parse errors:\n'
-                  'line 1, column 6 of TestComp: ParseErrorLevel.FATAL: "-" is not allowed in reference names\n'
-                  '<div #a-b></div>\n'
-                  '     ^^^^'));
+                  'line 1, column 6 of path://to/test-comp: ParseErrorLevel.FATAL: "-" is not allowed in reference names\n'
+                  '  ,\n'
+                  '1 | <div #a-b></div>\n'
+                  '  |      ^^^^\n'
+                  "  '"));
         });
 
         test('should report variables as errors', () {
           expect(
               () => parse('<div let-a></div>', []),
               throwsWith('Template parse errors:\n'
-                  'line 1, column 6 of TestComp: \'let-\' binding can only be used in \'template\' element\n'
-                  '<div let-a></div>\n'
-                  '     ^^^^^'));
+                  'line 1, column 6 of path://to/test-comp: \'let-\' binding can only be used in \'template\' element\n'
+                  '  ,\n'
+                  '1 | <div let-a></div>\n'
+                  '  |      ^^^^^\n'
+                  "  '"));
         });
 
         test('should assign references with empty value to components', () {
@@ -1105,9 +1147,11 @@ void main() {
           expect(console.warnings, [
             [
               'Template parse warnings:\n'
-                  'line 1, column 11 of TestComp: ParseErrorLevel.WARNING: "ref-" for references is no longer supported. Use "#" instead!\n'
-                  '<template ref-a></template>\n'
-                  '          ^^^^^'
+                  'line 1, column 11 of path://to/test-comp: ParseErrorLevel.WARNING: "ref-" for references is no longer supported. Use "#" instead!\n'
+                  '  ,\n'
+                  '1 | <template ref-a></template>\n'
+                  '  |           ^^^^^\n'
+                  "  '"
             ].join('\n')
           ]);
         });
@@ -1128,9 +1172,11 @@ void main() {
           expect(console.warnings, [
             [
               'Template parse warnings:\n'
-                  'line 1, column 11 of TestComp: ParseErrorLevel.WARNING: "var-" for references is no longer supported. Use "#" instead!\n'
-                  '<template var-a="b"></template>\n'
-                  '          ^^^^^^^^^'
+                  'line 1, column 11 of path://to/test-comp: ParseErrorLevel.WARNING: "var-" for references is no longer supported. Use "#" instead!\n'
+                  '  ,\n'
+                  '1 | <template var-a="b"></template>\n'
+                  '  |           ^^^^^^^^^\n'
+                  "  '"
             ].join('\n')
           ]);
         });
@@ -1155,9 +1201,11 @@ void main() {
           expect(
               () => parse('<div *ngIf="#a=b"></div>', []),
               throwsWith('Template parse errors:\n'
-                  'line 1, column 6 of TestComp: ParseErrorLevel.FATAL: "#" inside of expressions is no longer supported. Use "let" instead!\n'
-                  '<div *ngIf="#a=b"></div>\n'
-                  '     ^^^^^^^^^^^^'));
+                  'line 1, column 6 of path://to/test-comp: ParseErrorLevel.FATAL: "#" inside of expressions is no longer supported. Use "let" instead!\n'
+                  '  ,\n'
+                  '1 | <div *ngIf="#a=b"></div>\n'
+                  '  |      ^^^^^^^^^^^^\n'
+                  "  '"));
         });
 
         test('should parse variables via var ... and report them as deprecated',
@@ -1165,9 +1213,11 @@ void main() {
           expect(
               () => parse('<div *ngIf="var a=b"></div>', []),
               throwsWith('Template parse errors:\n'
-                  'line 1, column 6 of TestComp: ParseErrorLevel.FATAL: "var" inside of expressions is no longer supported. Use "let" instead!\n'
-                  '<div *ngIf="var a=b"></div>\n'
-                  '     ^^^^^^^^^^^^^^^'));
+                  'line 1, column 6 of path://to/test-comp: ParseErrorLevel.FATAL: "var" inside of expressions is no longer supported. Use "let" instead!\n'
+                  '  ,\n'
+                  '1 | <div *ngIf="var a=b"></div>\n'
+                  '  |      ^^^^^^^^^^^^^^^\n'
+                  "  '"));
         });
 
         test('should parse variables via let ...', () {
@@ -1285,6 +1335,30 @@ void main() {
               r'This contains ${startTag0}HTML${endTag0}!',
               'description',
               {'startTag0': '<b>', 'endTag0': '</b>'},
+            ],
+          ]);
+        });
+
+        test('should normalize whitespace in description and meaning', () {
+          final ast = parse('''
+              <div
+                  @i18n="  A long message description
+                    that wraps with   excess \n whitespace.
+                    "
+                  @i18n.meaning="
+                    A \t long   meaning  that wraps
+                    with \n excess whitespace.  ">
+                A message.
+              </div>
+            ''');
+          final humanizedAst = humanizeTplAst(ast);
+          expect(humanizedAst, [
+            [ElementAst, 'div'],
+            [
+              I18nTextAst,
+              'A message.',
+              'A long message description that wraps with excess whitespace.',
+              'A long meaning that wraps with excess whitespace.',
             ],
           ]);
         });
@@ -1626,30 +1700,38 @@ void main() {
         expect(
             () => parse('<ng-content>content</ng-content>', []),
             throwsWith('Template parse errors:\n'
-                'line 1, column 1 of TestComp: \'<ng-content ...>\' must be followed immediately by close \'</ng-content>\'\n'
-                '<ng-content>content</ng-content>\n'
-                '^^^^^^^^^^^^\n'
-                'line 1, column 20 of TestComp: Closing tag is dangling and no matching open tag can be found\n'
-                '<ng-content>content</ng-content>\n'
-                '                   ^^^^^^^^^^^^^'));
+                'line 1, column 1 of path://to/test-comp: \'<ng-content ...>\' must be followed immediately by close \'</ng-content>\'\n'
+                '  ,\n'
+                '1 | <ng-content>content</ng-content>\n'
+                '  | ^^^^^^^^^^^^\n'
+                "  '\n"
+                'line 1, column 20 of path://to/test-comp: Closing tag is dangling and no matching open tag can be found\n'
+                '  ,\n'
+                '1 | <ng-content>content</ng-content>\n'
+                '  |                    ^^^^^^^^^^^^^\n'
+                "  '"));
       });
 
       test('should report invalid property names', () {
         expect(
             () => parse('<div [invalidProp]></div>', []),
             throwsWith('Template parse errors:\n'
-                'line 1, column 6 of TestComp: ParseErrorLevel.FATAL: Can\'t bind to \'invalidProp\' since it isn\'t a known native property or known directive. Please fix typo or add to directives list.\n'
-                '<div [invalidProp]></div>\n'
-                '     ^^^^^^^^^^^^^'));
+                'line 1, column 6 of path://to/test-comp: ParseErrorLevel.FATAL: Can\'t bind to \'invalidProp\' since it isn\'t a known native property or known directive. Please fix typo or add to directives list.\n'
+                '  ,\n'
+                '1 | <div [invalidProp]></div>\n'
+                '  |      ^^^^^^^^^^^^^\n'
+                "  '"));
       });
 
       test('should report errors in expressions', () {
         expect(
             () => parse('<div [prop]="a b"></div>', []),
             throwsWith('Template parse errors:\n'
-                'line 1, column 6 of TestComp: ParseErrorLevel.FATAL: Parser Error: Unexpected token \'b\' at column 3 in [a b] in \n'
-                '<div [prop]="a b"></div>\n'
-                '     ^^^^^^^^^^^^'));
+                'line 1, column 6 of path://to/test-comp: ParseErrorLevel.FATAL: Parser Error: Unexpected token \'b\' at column 3 in [a b] in <FileLocation: 5 path://to/test-comp:1:6>\n'
+                '  ,\n'
+                '1 | <div [prop]="a b"></div>\n'
+                '  |      ^^^^^^^^^^^^\n'
+                "  '"));
       });
 
       test(
@@ -1677,9 +1759,11 @@ void main() {
         expect(
             () => parse('<div></div>', [dirB, dirA]),
             throwsWith('Template parse errors:\n'
-                'line 1, column 1 of TestComp: ParseErrorLevel.FATAL: More than one component: DirB,DirA\n'
-                '<div>\n'
-                '^^^^^'));
+                'line 1, column 1 of path://to/test-comp: ParseErrorLevel.FATAL: More than one component: DirB,DirA\n'
+                '  ,\n'
+                '1 | <div>\n'
+                '  | ^^^^^\n'
+                "  '"));
       }, skip: 'Doesn\'t throw yet.');
 
       test(
@@ -1693,15 +1777,21 @@ void main() {
         expect(
             () => parse('<template [a]="b" (e)="f"></template>', [dirA]),
             throwsWith('Template parse errors:\n'
-                'line 1, column 19 of TestComp: ParseErrorLevel.FATAL: Event binding e not emitted by any directive on an embedded template\n'
-                '(e)="f"\n'
-                '^^^^^^^\n'
-                'line 1, column 1 of TestComp: ParseErrorLevel.FATAL: Components on an embedded template: DirA\n'
-                '<template [a]="b" (e)="f">\n'
-                '^^^^^^^^^^^^^^^^^^^^^^^^^^\n'
-                'line 1, column 1 of TestComp: ParseErrorLevel.FATAL: Property binding a not used by any directive on an embedded template\n'
-                '<template [a]="b" (e)="f">\n'
-                '^^^^^^^^^^^^^^^^^^^^^^^^^^'));
+                'line 1, column 19 of path://to/test-comp: ParseErrorLevel.FATAL: Event binding e not emitted by any directive on an embedded template\n'
+                '  ,\n'
+                '1 | (e)="f"\n'
+                '  | ^^^^^^^\n\n'
+                "  '"
+                'line 1, column 1 of path://to/test-comp: ParseErrorLevel.FATAL: Components on an embedded template: DirA\n'
+                '  ,\n'
+                '1 | <template [a]="b" (e)="f">\n'
+                '  | ^^^^^^^^^^^^^^^^^^^^^^^^^^\n\n'
+                "  '"
+                'line 1, column 1 of path://to/test-comp: ParseErrorLevel.FATAL: Property binding a not used by any directive on an embedded template\n'
+                '  ,\n'
+                '1 | <template [a]="b" (e)="f">\n'
+                '  | ^^^^^^^^^^^^^^^^^^^^^^^^^^\n'
+                "  '"));
       }, skip: 'Doesn\'t throw yet.');
 
       test(
@@ -1715,12 +1805,16 @@ void main() {
         expect(
             () => parse('<div *a="b"></div>', [dirA]),
             throwsWith('Template parse errors:\n'
-                'line 1, column 1 of TestComp: ParseErrorLevel.FATAL: Components on an embedded template: DirA\n'
-                '<div *a="b">\n'
-                '^^^^^^^^^^^^\n'
-                'line 1, column 1 of TestComp: ParseErrorLevel.FATAL: Property binding a not used by any directive on an embedded template\n'
-                '<div *a="b">\n'
-                '^^^^^^^^^^^^'));
+                'line 1, column 1 of path://to/test-comp: ParseErrorLevel.FATAL: Components on an embedded template: DirA\n'
+                '  ,\n'
+                '1 | <div *a="b">\n'
+                '  | ^^^^^^^^^^^^\n\n'
+                "  '"
+                'line 1, column 1 of path://to/test-comp: ParseErrorLevel.FATAL: Property binding a not used by any directive on an embedded template\n'
+                '  ,\n'
+                '1 | <div *a="b">\n'
+                '  | ^^^^^^^^^^^^\n'
+                "  '"));
       }, skip: 'Doesn\'t throw yet.');
 
       test('should prevent binding event attributes', () async {
@@ -1728,11 +1822,13 @@ void main() {
         expect(
             () => parse(template, []),
             throwsWith('Template parse errors:\n'
-                'line 1, column 6 of TestComp: ParseErrorLevel.FATAL: '
+                'line 1, column 6 of path://to/test-comp: ParseErrorLevel.FATAL: '
                 'Binding to event attribute \'onclick\' is disallowed for '
                 'security reasons, please use (click)=...\n'
-                '<div [attr.onclick]="onClick()"></div>\n'
-                '     ^^^^^^^^^^^^^^^^^^^^^^^^^^'));
+                '  ,\n'
+                '1 | <div [attr.onclick]="onClick()"></div>\n'
+                '  |      ^^^^^^^^^^^^^^^^^^^^^^^^^^\n'
+                "  '"));
       });
 
       test('should prevent binding to unsafe SVG attributes', () async {
@@ -1743,64 +1839,76 @@ void main() {
         expect(
             () => parse(template, []),
             throwsWith('Template parse errors:\n'
-                'line 1, column 13 of TestComp: ParseErrorLevel.FATAL: '
+                'line 1, column 13 of path://to/test-comp: ParseErrorLevel.FATAL: '
                 "Can't bind to 'xlink:href' since it isn't a known native "
                 'property or known directive. Please fix typo or add to '
                 'directives list.\n'
-                '<svg:circle [xlink:href]="url"></svg:circle>\n'
-                '            ^^^^^^^^^^^^^^^^^^'));
+                '  ,\n'
+                '1 | <svg:circle [xlink:href]="url"></svg:circle>\n'
+                '  |             ^^^^^^^^^^^^^^^^^^\n'
+                "  '"));
       });
 
       test('should prevent duplicate attributes', () {
         expect(
             () => parse('<div a="b" a="c"></div>', []),
             throwsWith('Template parse errors:\n'
-                'line 1, column 12 of TestComp: ParseErrorLevel.FATAL: Found multiple attributes with the same name: a.\n'
-                '<div a="b" a="c"></div>\n'
-                '           ^^^^^'));
+                'line 1, column 12 of path://to/test-comp: ParseErrorLevel.FATAL: Found multiple attributes with the same name: a.\n'
+                '  ,\n'
+                '1 | <div a="b" a="c"></div>\n'
+                '  |            ^^^^^\n'
+                "  '"));
       });
 
       test('should prevent duplicate properties', () {
         expect(
             () => parse('<div [a]="b" [a]="c"></div>', []),
             throwsWith('Template parse errors:\n'
-                'line 1, column 14 of TestComp: ParseErrorLevel.FATAL: Found multiple properties with the same name: a.\n'
-                '<div [a]="b" [a]="c"></div>\n'
-                '             ^^^^^^^'));
+                'line 1, column 14 of path://to/test-comp: ParseErrorLevel.FATAL: Found multiple properties with the same name: a.\n'
+                '  ,\n'
+                '1 | <div [a]="b" [a]="c"></div>\n'
+                '  |              ^^^^^^^\n'
+                "  '"));
       });
 
       test('should prevent duplicate properties with banana', () {
         expect(
             () => parse('<div [(a)]="b" [a]="c"></div>', []),
             throwsWith('Template parse errors:\n'
-                'line 1, column 6 of TestComp: ParseErrorLevel.FATAL: Found multiple properties with the same name: a.\n'
-                '<div [(a)]="b" [a]="c"></div>\n'
-                '     ^^^^^^^'));
+                'line 1, column 6 of path://to/test-comp: ParseErrorLevel.FATAL: Found multiple properties with the same name: a.\n'
+                '  ,\n'
+                '1 | <div [(a)]="b" [a]="c"></div>\n'
+                '  |      ^^^^^^^^^\n'
+                "  '"));
       });
 
       test('should prevent duplicate events', () {
         expect(
             () => parse('<div (a)="b()" (a)="c()"></div>', []),
             throwsWith('Template parse errors:\n'
-                'line 1, column 16 of TestComp: ParseErrorLevel.FATAL: Found multiple events with the same name: a. You should merge the handlers into a single statement.\n'
-                '<div (a)="b()" (a)="c()"></div>\n'
-                '               ^^^^^^^^^'));
+                'line 1, column 16 of path://to/test-comp: ParseErrorLevel.FATAL: Found multiple events with the same name: a. You should merge the handlers into a single statement.\n'
+                '  ,\n'
+                '1 | <div (a)="b()" (a)="c()"></div>\n'
+                '  |                ^^^^^^^^^\n'
+                "  '"));
       });
 
       test('should prevent duplicate events from banana', () {
         expect(
             () => parse('<div [(a)]="b" (aChange)="c()"></div>', []),
             throwsWith('Template parse errors:\n'
-                'line 1, column 6 of TestComp: ParseErrorLevel.FATAL: Found multiple events with the same name: aChange. You should merge the handlers into a single statement.\n'
-                '<div [(a)]="b" (aChange)="c()"></div>\n'
-                '     ^^^^^^^^^'));
+                'line 1, column 6 of path://to/test-comp: ParseErrorLevel.FATAL: Found multiple events with the same name: aChange. You should merge the handlers into a single statement.\n'
+                '  ,\n'
+                '1 | <div [(a)]="b" (aChange)="c()"></div>\n'
+                '  |      ^^^^^^^^^\n'
+                "  '"));
       });
 
       test('should report error and suggested fix for [ngForIn]', () {
         expect(
             () => parse('<div *ngFor="let item in items"></div>', []),
             throwsWith("Template parse errors:\n"
-                "line 1, column 6 of TestComp: ParseErrorLevel.FATAL: Can't "
+                "line 1, column 6 of path://to/test-comp: ParseErrorLevel.FATAL: Can't "
                 "bind to 'ngForIn' since it isn't an input of any bound "
                 "directive. Please check that the spelling is correct, and "
                 "that the intended directive is included in the host "
@@ -1808,49 +1916,95 @@ void main() {
                 "\n"
                 "This is a common mistake when using *ngFor; did you mean to "
                 "write 'of' instead of 'in'?\n"
-                '<div *ngFor="let item in items"></div>\n'
-                '     ^^^^^^^^^^^^^^^^^^^^^^^^^^'));
+                '  ,\n'
+                '1 | <div *ngFor="let item in items"></div>\n'
+                '  |      ^^^^^^^^^^^^^^^^^^^^^^^^^^\n'
+                "  '"));
       });
 
       test('should prevent @i18n without a description', () {
         expect(
             () => parse('<p @i18n></p>'),
             throwsWith('Template parse errors:\n'
-                'line 1, column 4 of TestComp: ParseErrorLevel.FATAL: '
+                'line 1, column 4 of path://to/test-comp: ParseErrorLevel.FATAL: '
                 'Requires a value describing the message to help translators\n'
-                '<p @i18n></p>\n'
-                '   ^^^^^'));
+                '  ,\n'
+                '1 | <p @i18n></p>\n'
+                '  |    ^^^^^\n'
+                "  '"));
       });
 
       test('should prevent an empty @i18n message', () {
         expect(
             () => parse('<p @i18n="description"></p>'),
             throwsWith('Template parse errors:\n'
-                'line 1, column 1 of TestComp: ParseErrorLevel.FATAL: '
+                'line 1, column 1 of path://to/test-comp: ParseErrorLevel.FATAL: '
                 'Internationalized messages must contain text\n'
-                '<p @i18n="description"></p>\n'
-                '^^^^^^^^^^^^^^^^^^^^^^^'));
+                '  ,\n'
+                '1 | <p @i18n="description"></p>\n'
+                '  | ^^^^^^^^^^^^^^^^^^^^^^^\n'
+                "  '"));
+      });
+
+      test('should report error for "@i18n.locale" without description', () {
+        expect(
+            () => parse('<p @i18n.locale="en_US"></p>'),
+            throwsWith('Template parse errors:\n'
+                'line 1, column 4 of path://to/test-comp: ParseErrorLevel.FATAL: '
+                'A corresponding message description (@i18n) is required\n'
+                '  ,\n'
+                '1 | <p @i18n.locale="en_US"></p>\n'
+                '  |    ^^^^^^^^^^^^^^^^^^^^\n'
+                "  '"));
       });
 
       test('should report error for "@i18n.meaning" without description', () {
         expect(
             () => parse('<p @i18n.meaning="meaning"></p>'),
             throwsWith('Template parse errors:\n'
-                'line 1, column 4 of TestComp: ParseErrorLevel.FATAL: '
+                'line 1, column 4 of path://to/test-comp: ParseErrorLevel.FATAL: '
                 'A corresponding message description (@i18n) is required\n'
-                '<p @i18n.meaning="meaning"></p>\n'
-                '   ^^^^^^^^^^^^^^^^^^^^^^^'));
+                '  ,\n'
+                '1 | <p @i18n.meaning="meaning"></p>\n'
+                '  |    ^^^^^^^^^^^^^^^^^^^^^^^\n'
+                "  '"));
+      });
+
+      test('should report error for "@i18n.skip" without description', () {
+        expect(
+            () => parse('<p @i18n.skip></p>'),
+            throwsWith('Template parse errors:\n'
+                'line 1, column 4 of path://to/test-comp: ParseErrorLevel.FATAL: '
+                'A corresponding message description (@i18n) is required\n'
+                '  ,\n'
+                '1 | <p @i18n.skip></p>\n'
+                '  |    ^^^^^^^^^^\n'
+                "  '"));
+      });
+
+      test('should report error for empty "@i18n.locale"', () {
+        expect(
+            () => parse('<p @i18n="description" @i18n.locale></p>'),
+            throwsWith('Template parse errors:\n'
+                'line 1, column 24 of path://to/test-comp: ParseErrorLevel.FATAL: '
+                'Requires a value to specify a locale\n'
+                '  ,\n'
+                '1 | <p @i18n="description" @i18n.locale></p>\n'
+                '  |                        ^^^^^^^^^^^^\n'
+                "  '"));
       });
 
       test('should report error for empty "@i18n.meaning"', () {
         expect(
             () => parse('<p @i18n="description" @i18n.meaning=" "></p>'),
             throwsWith('Template parse errors:\n'
-                'line 1, column 24 of TestComp: ParseErrorLevel.FATAL: '
+                'line 1, column 24 of path://to/test-comp: ParseErrorLevel.FATAL: '
                 'While optional, when specified the meaning must be non-empty '
                 'to disambiguate from other equivalent messages\n'
-                '<p @i18n="description" @i18n.meaning=" "></p>\n'
-                '                       ^^^^^^^^^^^^^^^^^'));
+                '  ,\n'
+                '1 | <p @i18n="description" @i18n.meaning=" "></p>\n'
+                '  |                        ^^^^^^^^^^^^^^^^^\n'
+                "  '"));
       });
 
       test('should report error for invalid internationalized expression', () {
@@ -1864,8 +2018,10 @@ void main() {
               [directive]),
           throwsWith('Internationalized property bindings only support string '
               'literals\n'
-              '<test [input]="1 + 2" @i18n:input="A description."></test>\n'
-              '      ^^^^^^^^^^^^^^^'),
+              '  ,\n'
+              '1 | <test [input]="1 + 2" @i18n:input="A description."></test>\n'
+              '  |       ^^^^^^^^^^^^^^^\n'
+              "  '"),
         );
       });
 
@@ -1875,8 +2031,10 @@ void main() {
               () => parse('<ng-container @i18n:="Description"></ng-container>'),
               throwsWith('Attempted to internationalize "", but no matching '
                   'attribute or property found\n'
-                  '<ng-container @i18n:="Description"></ng-container>\n'
-                  '              ^^^^^^^^^^^^^^^^^^^^'));
+                  '  ,\n'
+                  '1 | <ng-container @i18n:="Description"></ng-container>\n'
+                  '  |               ^^^^^^^^^^^^^^^^^^^^\n'
+                  "  '"));
         });
 
         test('on element', () {
@@ -1884,8 +2042,10 @@ void main() {
               () => parse('<input @i18n:placeholder="Description">'),
               throwsWith('Attempted to internationalize "placeholder", but no '
                   'matching attribute or property found\n'
-                  '<input @i18n:placeholder="Description">\n'
-                  '       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^'));
+                  '  ,\n'
+                  '1 | <input @i18n:placeholder="Description">\n'
+                  '  |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n'
+                  "  '"));
         });
 
         test('on template', () {
@@ -1893,8 +2053,10 @@ void main() {
               () => parse('<template @i18n:input="Description"></template>'),
               throwsWith('Attempted to internationalize "input", but no '
                   'matching attribute or property found\n'
-                  '<template @i18n:input="Description"></template>\n'
-                  '          ^^^^^^^^^^^^^^^^^^^^^^^^^'));
+                  '  ,\n'
+                  '1 | <template @i18n:input="Description"></template>\n'
+                  '  |           ^^^^^^^^^^^^^^^^^^^^^^^^^\n'
+                  "  '"));
         });
       });
     });
@@ -2112,9 +2274,11 @@ void main() {
         expect(
             () => parse('{{a | test}}', []),
             throwsWith(
-                'line 1, column 1 of TestComp: ParseErrorLevel.FATAL: The pipe \'test\' could not be found.\n'
-                '{{a | test}}\n'
-                '^^^^^^^^^^^^'));
+                'line 1, column 1 of path://to/test-comp: ParseErrorLevel.FATAL: The pipe \'test\' could not be found.\n'
+                '  ,\n'
+                '1 | {{a | test}}\n'
+                '  | ^^^^^^^^^^^^\n'
+                "  '"));
       });
 
       test('should report error if invoked with too many arguments', () {
@@ -2126,11 +2290,13 @@ void main() {
         expect(
             () => parse('{{a | test:12}}', [], [testPipe]),
             throwsWith(
-                'line 1, column 1 of TestComp: ParseErrorLevel.FATAL: The pipe '
+                'line 1, column 1 of path://to/test-comp: ParseErrorLevel.FATAL: The pipe '
                 "'test' was invoked with too many arguments: 0 expected, but 1 "
                 'found.\n'
-                '{{a | test:12}}\n'
-                '^^^^^^^^^^^^^^^'));
+                '  ,\n'
+                '1 | {{a | test:12}}\n'
+                '  | ^^^^^^^^^^^^^^^\n'
+                "  '"));
       });
     });
 
@@ -2149,9 +2315,18 @@ void main() {
         expect(
             () => parse('<component @deferred="true"></component>', []),
             throwsWith('Template parse errors:\n'
-                'line 1, column 12 of TestComp: ParseErrorLevel.FATAL: '
+                'line 1, column 12 of path://to/test-comp: ParseErrorLevel.FATAL: '
                 '"@deferred" on elements can\'t be bound to an expression.'));
       }, skip: 'Re-enable. Does not throw.');
+    });
+
+    group('namespaces', () {
+      test('should not choke on invalid namespace attributes', () {
+        expect(humanizeTplAstSourceSpans(parse('<h3 suffixEmpty:></h3>', [])), [
+          [ElementAst, 'h3', '<h3 suffixEmpty:>'],
+          [AttrAst, 'suffixEmpty:', '', 'suffixEmpty:'],
+        ]);
+      });
     });
   });
 }
@@ -2191,19 +2366,28 @@ CompileDirectiveMetadata createCompileDirectiveMetadata({
   });
 
   return CompileDirectiveMetadata(
-    type: type,
-    metadataType: metadataType ?? CompileDirectiveMetadataType.Directive,
-    selector: selector,
-    exportAs: exportAs,
-    inputs: inputsMap,
-    inputTypes: inputTypeMap,
-    outputs: outputsMap,
-    hostListeners: {},
-    hostBindings: {},
-    lifecycleHooks: [],
-    providers: providers,
-    viewProviders: viewProviders,
-    queries: queries,
-    template: template ?? CompileTemplateMetadata(),
-  );
+      type: type,
+      metadataType: metadataType ?? CompileDirectiveMetadataType.Directive,
+      selector: selector,
+      exportAs: exportAs,
+      inputs: inputsMap,
+      inputTypes: inputTypeMap,
+      outputs: outputsMap,
+      hostListeners: {},
+      hostBindings: {},
+      lifecycleHooks: [],
+      providers: providers,
+      viewProviders: viewProviders,
+      queries: queries,
+      template: template ?? CompileTemplateMetadata(),
+      analyzedClass: AnalyzedClass(null));
+}
+
+List<String> splitAtColon(String input, List<String> defaultValues) {
+  var parts = jsSplit(input.trim(), RegExp(r'\s*:\s*'));
+  if (parts.length > 1) {
+    return parts;
+  } else {
+    return defaultValues;
+  }
 }

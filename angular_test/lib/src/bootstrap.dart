@@ -8,10 +8,6 @@ import 'dart:html';
 import 'package:angular/angular.dart';
 import 'package:angular/src/bootstrap/run.dart';
 import 'package:angular/src/core/application_ref.dart';
-import 'package:angular/src/core/change_detection/constants.dart';
-import 'package:angular/src/core/linker/view_ref.dart';
-import 'package:angular/src/core/render/api.dart';
-import 'package:angular/src/platform/dom/shared_styles_host.dart';
 
 /// Returns an application injector factory for [providers], if any.
 InjectorFactory testInjectorFactory(List<dynamic> providers) {
@@ -25,6 +21,9 @@ InjectorFactory testInjectorFactory(List<dynamic> providers) {
     ], parent);
   };
 }
+
+/// Used as a "tear-off" of [NgZone].
+NgZone _createNgZone() => NgZone();
 
 /// Returns a future that completes with a new instantiated component.
 ///
@@ -40,6 +39,7 @@ Future<ComponentRef<E>> bootstrapForTest<E>(
   InjectorFactory userInjector, {
   FutureOr<void> Function(Injector) beforeComponentCreated,
   FutureOr<void> Function(E) beforeChangeDetection,
+  NgZone Function() createNgZone = _createNgZone,
 }) async {
   if (componentFactory == null) {
     throw ArgumentError.notNull('componentFactory');
@@ -51,7 +51,7 @@ Future<ComponentRef<E>> bootstrapForTest<E>(
     throw ArgumentError.notNull('userInjector');
   }
   // This should be kept in sync with 'runApp' as much as possible.
-  final injector = appInjector(userInjector);
+  final injector = appInjector(userInjector, createNgZone: createNgZone);
   final ApplicationRef appRef = injector.get(ApplicationRef);
   NgZoneError caughtError;
   final NgZone ngZone = injector.get(NgZone);
@@ -60,12 +60,9 @@ Future<ComponentRef<E>> bootstrapForTest<E>(
   });
 
   if (beforeComponentCreated != null) {
-    var completer = Completer<void>();
-    ngZone.runGuarded(() => new Future(() {})
-        .then((_) => beforeComponentCreated(injector))
-        .then((_) => completer.complete(), onError: completer.completeError));
-    await completer.future;
+    await beforeComponentCreated(injector);
   }
+
   // Code works improperly when .run is typed to return FutureOr:
   // https://github.com/dart-lang/sdk/issues/32285.
   return appRef.run<ComponentRef<E>>(() {
@@ -86,7 +83,7 @@ Future<ComponentRef<E>> bootstrapForTest<E>(
       //
       // Can be removed if NgZone.onTurnDone ever supports re-entry, either by
       // no longer using Streams or fixing dart:async.
-      await Future.value();
+      await Future<void>.value();
       await onErrorSub.cancel();
       if (caughtError != null) {
         return Future.error(
@@ -106,18 +103,7 @@ Future<ComponentRef<E>> _runAndLoadComponent<E>(
   Injector injector, {
   FutureOr<void> beforeChangeDetection(E componentInstance),
 }) {
-  // TODO: Consider using hostElement instead.
-  sharedStylesHost ??= DomSharedStylesHost(document);
   final componentRef = componentFactory.create(injector);
-  final cdMode = (componentRef.hostView as ViewRefImpl).appView.cdMode;
-  if (!isDefaultChangeDetectionStrategy(cdMode) &&
-      cdMode != ChangeDetectionStrategy.CheckAlways) {
-    throw UnsupportedError(
-        'The root component in an Angular test or application must use the '
-        'default form of change detection (ChangeDetectionStrategy.Default). '
-        'Instead got ${(componentRef.hostView as ViewRefImpl).appView.cdMode} '
-        'on component $E.');
-  }
 
   Future<ComponentRef<E>> loadComponent() {
     hostElement.append(componentRef.location);
@@ -134,7 +120,7 @@ Future<ComponentRef<E>> _runAndLoadComponent<E>(
     beforeChangeDetectionReturn = beforeChangeDetection(componentRef.instance);
   }
 
-  if (beforeChangeDetectionReturn is Future) {
+  if (beforeChangeDetectionReturn is Future<void>) {
     return beforeChangeDetectionReturn.then((_) => loadComponent());
   } else {
     return loadComponent();

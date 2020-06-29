@@ -2,11 +2,9 @@ import 'package:collection/collection.dart';
 
 import '../core/change_detection/change_detection.dart'
     show ChangeDetectionStrategy;
-import '../core/metadata/lifecycle_hooks.dart' show LifecycleHooks;
 import '../core/metadata/view.dart';
 import '../core/metadata/visibility.dart';
 import 'analyzed_class.dart';
-import 'compiler_utils.dart';
 import 'expression_parser/ast.dart' as ast;
 import 'output/convert.dart' show typeArgumentsFrom;
 import 'output/output_ast.dart' as o;
@@ -14,16 +12,15 @@ import 'selector.dart' show CssSelector;
 
 final _listsEqual = const ListEquality<Object>().equals;
 
-abstract class CompileMetadataWithIdentifier<T> {
-  CompileIdentifierMetadata<T> get identifier;
+abstract class CompileMetadataWithIdentifier {
+  CompileIdentifierMetadata get identifier;
 }
 
-abstract class CompileMetadataWithType<T>
-    extends CompileMetadataWithIdentifier<T> {
+abstract class CompileMetadataWithType extends CompileMetadataWithIdentifier {
   CompileTypeMetadata get type;
 }
 
-class CompileIdentifierMetadata<T> implements CompileMetadataWithIdentifier<T> {
+class CompileIdentifierMetadata implements CompileMetadataWithIdentifier {
   // TODO(het): remove this once we switch to codegen. The transformer version
   // includes prefixes that aren't supposed to be emitted because it can't tell
   // if a prefix is a class name or a qualified import name.
@@ -33,22 +30,23 @@ class CompileIdentifierMetadata<T> implements CompileMetadataWithIdentifier<T> {
 
   final String name;
   final String moduleUrl;
-  final T value;
+  final Object value;
 
   /// If this identifier refers to a class declaration, this is non-null.
   final AnalyzedClass analyzedClass;
 
-  CompileIdentifierMetadata(
-      {this.name,
-      this.moduleUrl,
-      this.prefix,
-      this.emitPrefix = false,
-      this.typeArguments = const [],
-      this.value,
-      this.analyzedClass});
+  CompileIdentifierMetadata({
+    this.name,
+    this.moduleUrl,
+    this.prefix,
+    this.emitPrefix = false,
+    this.typeArguments = const [],
+    this.value,
+    this.analyzedClass,
+  });
 
   @override
-  CompileIdentifierMetadata<T> get identifier => this;
+  CompileIdentifierMetadata get identifier => this;
 }
 
 class CompileDiDependencyMetadata {
@@ -58,23 +56,25 @@ class CompileDiDependencyMetadata {
   final bool isSkipSelf;
   final bool isOptional;
   final bool isValue;
-  CompileTokenMetadata token;
-  dynamic value;
-  CompileDiDependencyMetadata(
-      {this.isAttribute = false,
-      this.isSelf = false,
-      this.isHost = false,
-      this.isSkipSelf = false,
-      this.isOptional = false,
-      this.isValue = false,
-      this.token,
-      this.value});
+  final CompileTokenMetadata token;
+  final Object value;
+
+  CompileDiDependencyMetadata({
+    this.isAttribute = false,
+    this.isSelf = false,
+    this.isHost = false,
+    this.isSkipSelf = false,
+    this.isOptional = false,
+    this.isValue = false,
+    this.token,
+    this.value,
+  });
 }
 
 class CompileProviderMetadata {
   final CompileTokenMetadata token;
   final CompileTypeMetadata useClass;
-  dynamic useValue;
+  final Object useValue;
   final CompileTokenMetadata useExisting;
   final CompileFactoryMetadata useFactory;
   final List<CompileDiDependencyMetadata> deps;
@@ -102,15 +102,14 @@ class CompileProviderMetadata {
   @override
   // ignore: hash_and_equals
   bool operator ==(other) {
-    if (other is! CompileProviderMetadata) return false;
-    CompileProviderMetadata _other = other;
-    return token == _other.token &&
-        useClass == _other.useClass &&
-        useValue == _other.useValue &&
-        useExisting == _other.useExisting &&
-        useFactory == _other.useFactory &&
-        _listsEqual(deps, _other.deps) &&
-        multi == _other.multi;
+    return other is CompileProviderMetadata &&
+        token == other.token &&
+        useClass == other.useClass &&
+        useValue == other.useValue &&
+        useExisting == other.useExisting &&
+        useFactory == other.useFactory &&
+        _listsEqual(deps, other.deps) &&
+        multi == other.multi;
   }
 
   @override
@@ -125,50 +124,55 @@ class CompileProviderMetadata {
       '}';
 }
 
-class CompileFactoryMetadata implements CompileIdentifierMetadata<Function> {
+class CompileFactoryMetadata implements CompileIdentifierMetadata {
   @override
-  String name;
+  final String name;
 
   @override
-  String prefix;
+  final String prefix;
 
   @override
-  bool emitPrefix;
+  final bool emitPrefix;
 
   @override
-  String moduleUrl;
-
-  @override
-  Function value;
+  final String moduleUrl;
 
   @override
   List<o.OutputType> get typeArguments => const [];
 
-  List<CompileDiDependencyMetadata> diDeps;
+  final List<CompileDiDependencyMetadata> diDeps;
 
-  CompileFactoryMetadata(
-      {this.name,
-      this.moduleUrl,
-      this.prefix,
-      this.emitPrefix = false,
-      this.diDeps = const [],
-      this.value});
+  CompileFactoryMetadata({
+    this.name,
+    this.moduleUrl,
+    this.prefix,
+    this.emitPrefix = false,
+    this.diDeps = const [],
+  });
 
   @override
-  CompileIdentifierMetadata<Function> get identifier => this;
+  CompileIdentifierMetadata get identifier => this;
 
   @override
   AnalyzedClass get analyzedClass => null;
+
+  @override
+  Object get value => throw UnsupportedError('Functions do not exist here');
 }
 
 class CompileTokenMetadata implements CompileMetadataWithIdentifier {
-  dynamic value;
-  @override
-  CompileIdentifierMetadata identifier;
-  bool identifierIsInstance;
+  final Object value;
 
-  CompileTokenMetadata(
-      {this.value, this.identifier, this.identifierIsInstance = false});
+  @override
+  final CompileIdentifierMetadata identifier;
+
+  final bool identifierIsInstance;
+
+  CompileTokenMetadata({
+    this.value,
+    this.identifier,
+    this.identifierIsInstance = false,
+  });
 
   // Used to determine unique-ness of CompileTokenMetadata.
   //
@@ -203,12 +207,15 @@ class CompileTokenMetadata implements CompileMetadataWithIdentifier {
 
   bool equalsTo(CompileTokenMetadata token2) {
     var ak = assetCacheKey;
-    return (ak != null && ak == token2.assetCacheKey);
+    return ak != null && ak == token2.assetCacheKey;
   }
 
   String get name {
-    return value != null ? sanitizeIdentifier(value) : identifier?.name;
+    return value != null ? _sanitizeIdentifier(value) : identifier?.name;
   }
+
+  static String _sanitizeIdentifier(Object name) =>
+      name.toString().replaceAll(RegExp(r'\W'), "_");
 
   @override
   // ignore: hash_and_equals
@@ -230,9 +237,7 @@ class CompileTokenMetadata implements CompileMetadataWithIdentifier {
 }
 
 class CompileTokenMap<V> {
-  final _valueMap = Map<dynamic, V>();
-  final List<V> _values = [];
-  final List<CompileTokenMetadata> _tokens = [];
+  final _valueMap = <dynamic, V>{};
 
   void add(CompileTokenMetadata token, V value) {
     var existing = get(token);
@@ -240,8 +245,6 @@ class CompileTokenMap<V> {
       throw StateError(
           'Add failed. Token already exists. Token: ${token.name}');
     }
-    _tokens.add(token);
-    _values.add(value);
     var ak = token.assetCacheKey;
     if (ak != null) {
       _valueMap[ak] = value;
@@ -255,16 +258,14 @@ class CompileTokenMap<V> {
 
   bool containsKey(CompileTokenMetadata token) => get(token) != null;
 
-  List<CompileTokenMetadata> get keys => _tokens;
+  List<V> get values => _valueMap.values.toList();
 
-  List<V> get values => _values;
-
-  int get size => _values.length;
+  int get length => _valueMap.length;
 }
 
 /// Metadata regarding compilation of a type.
 class CompileTypeMetadata
-    implements CompileIdentifierMetadata<Type>, CompileMetadataWithType<Type> {
+    implements CompileIdentifierMetadata, CompileMetadataWithType {
   @override
   String name;
 
@@ -305,7 +306,7 @@ class CompileTypeMetadata
   });
 
   @override
-  CompileIdentifierMetadata<Type> get identifier => this;
+  CompileIdentifierMetadata get identifier => this;
 
   @override
   CompileTypeMetadata get type => this;
@@ -316,15 +317,14 @@ class CompileTypeMetadata
   @override
   // ignore: hash_and_equals
   bool operator ==(other) {
-    if (other is! CompileTypeMetadata) return false;
-    CompileTypeMetadata _other = other;
-    return name == _other.name &&
-        prefix == _other.prefix &&
-        emitPrefix == _other.emitPrefix &&
-        moduleUrl == _other.moduleUrl &&
-        isHost == _other.isHost &&
-        value == _other.value &&
-        _listsEqual(diDeps, _other.diDeps);
+    return other is CompileTypeMetadata &&
+        name == other.name &&
+        prefix == other.prefix &&
+        emitPrefix == other.emitPrefix &&
+        moduleUrl == other.moduleUrl &&
+        isHost == other.isHost &&
+        value == other.value &&
+        _listsEqual(diDeps, other.diDeps);
   }
 
   @override
@@ -432,6 +432,9 @@ class CompileDirectiveMetadata implements CompileMetadataWithType {
   @override
   final CompileTypeMetadata type;
 
+  /// Directive extends or mixes-in `ComponentState`.
+  final bool isLegacyComponentState;
+
   /// User-land class where the component annotation originated.
   final CompileTypeMetadata originType;
 
@@ -452,13 +455,16 @@ class CompileDirectiveMetadata implements CompileMetadataWithType {
   final List<CompileQueryMetadata> viewQueries;
   final CompileTemplateMetadata template;
   final AnalyzedClass analyzedClass;
-  bool _requiresDirectiveChangeDetector;
 
   /// Restricts where the directive is injectable.
   final Visibility visibility;
 
+  /// Whether this is an `OnPush` component that also works in a `Default` app.
+  final bool isChangeDetectionLink;
+
   CompileDirectiveMetadata({
     this.type,
+    this.isLegacyComponentState = false,
     this.originType,
     this.metadataType,
     this.selector,
@@ -478,28 +484,59 @@ class CompileDirectiveMetadata implements CompileMetadataWithType {
     this.exports = const [],
     this.queries = const [],
     this.viewQueries = const [],
+    this.isChangeDetectionLink = false,
   });
+
+  CompileDirectiveMetadata.from(CompileDirectiveMetadata other,
+      {AnalyzedClass analyzedClass, CompileTemplateMetadata template})
+      : this.type = other.type,
+        this.isLegacyComponentState = other.isLegacyComponentState,
+        this.originType = other.originType,
+        this.metadataType = other.metadataType,
+        this.selector = other.selector,
+        this.exportAs = other.exportAs,
+        this.changeDetection = other.changeDetection,
+        this.inputs = other.inputs,
+        this.inputTypes = other.inputTypes,
+        this.outputs = other.outputs,
+        this.hostBindings = other.hostBindings,
+        this.hostListeners = other.hostListeners,
+        this.analyzedClass = analyzedClass ?? other.analyzedClass,
+        this.template = template ?? other.template,
+        this.visibility = other.visibility,
+        this.lifecycleHooks = other.lifecycleHooks,
+        this.providers = other.providers,
+        this.viewProviders = other.viewProviders,
+        this.exports = other.exports,
+        this.queries = other.queries,
+        this.viewQueries = other.viewQueries,
+        this.isChangeDetectionLink = other.isChangeDetectionLink;
 
   @override
   CompileIdentifierMetadata get identifier => type;
 
+  String toPrettyString() {
+    String name = type.name;
+    if (name.endsWith('Host')) {
+      name = name.substring(0, name.length - 4);
+    }
+    return '$name in ${type.moduleUrl} '
+        '(changeDetection: ${ChangeDetectionStrategy.toPrettyString(changeDetection)})';
+  }
+
   bool get isComponent =>
       metadataType == CompileDirectiveMetadataType.Component;
+
+  bool get isOnPush => changeDetection == ChangeDetectionStrategy.OnPush;
 
   /// Whether the directive requires a change detector class to be generated.
   ///
   /// [DirectiveChangeDetector] classes should only be generated if they
   /// reduce the amount of duplicate code. Therefore we check for the presence
   /// of host bindings to move from each call site to a single method.
-  bool get requiresDirectiveChangeDetector {
-    if (_requiresDirectiveChangeDetector == null) {
-      _requiresDirectiveChangeDetector =
-          metadataType == CompileDirectiveMetadataType.Directive &&
-              identifier.name != 'NgIf' &&
-              hostProperties.isNotEmpty;
-    }
-    return _requiresDirectiveChangeDetector;
-  }
+  bool get requiresDirectiveChangeDetector =>
+      metadataType == CompileDirectiveMetadataType.Directive &&
+      hostProperties.isNotEmpty;
 
   Map<String, ast.AST> _cachedHostAttributes;
   Map<String, ast.AST> _cachedHostProperties;
@@ -565,6 +602,7 @@ class CompileDirectiveMetadata implements CompileMetadataWithType {
 CompileDirectiveMetadata createHostComponentMeta(
     CompileTypeMetadata componentType,
     String componentSelector,
+    AnalyzedClass analyzedClass,
     bool preserveWhitespace) {
   var template =
       CssSelector.parse(componentSelector)[0].getMatchingElementTemplate();
@@ -576,12 +614,13 @@ CompileDirectiveMetadata createHostComponentMeta(
         isHost: true),
     template: CompileTemplateMetadata(
         template: template,
-        templateUrl: '',
+        templateUrl: '${componentType.moduleUrl}/host/$componentSelector',
         preserveWhitespace: preserveWhitespace,
         styles: const [],
         styleUrls: const [],
         ngContentSelectors: const []),
     changeDetection: ChangeDetectionStrategy.Default,
+    analyzedClass: analyzedClass,
     inputs: const {},
     inputTypes: const {},
     outputs: const {},
@@ -629,4 +668,24 @@ class CompilePipeMetadata implements CompileMetadataWithType {
 
   @override
   CompileIdentifierMetadata get identifier => type;
+}
+
+/// Lifecycle hooks are guaranteed to be called in the following order:
+/// - `afterChanges` (if any bindings have been changed by the Angular framework),
+/// - `onInit` (after the first check only),
+/// - `doCheck`,
+/// - `afterContentInit`,
+/// - `afterContentChecked`,
+/// - `afterViewInit`,
+/// - `afterViewChecked`,
+/// - `onDestroy` (at the very end before destruction)
+enum LifecycleHooks {
+  onInit,
+  onDestroy,
+  doCheck,
+  afterChanges,
+  afterContentInit,
+  afterContentChecked,
+  afterViewInit,
+  afterViewChecked
 }

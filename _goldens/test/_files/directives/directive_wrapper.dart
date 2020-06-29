@@ -5,9 +5,12 @@ import 'package:angular/angular.dart';
 @Directive(
   selector: '[some-child-directive]',
 )
-class ChildDirective {
+class ChildDirective implements OnInit, OnDestroy, AfterChanges {
   Element element;
+
+  // ignore: deprecated_member_use
   ElementRef elementRef;
+
   ChildDirective(this.element, this.elementRef);
 
   StreamController _triggerController;
@@ -19,7 +22,7 @@ class ChildDirective {
   set inputWithIterable(Iterable<int> intList) {}
 
   @Input('row')
-  set gridRow(String value) {
+  set gridRow(int value) {
     print(value);
   }
 
@@ -44,11 +47,23 @@ class ChildDirective {
   @HostBinding('attr.role')
   static const hostRole = 'button';
 
+  @HostBinding('attr.aria-label')
+  final label = 'Directive';
+
   @HostBinding('attr.aria-disabled')
   String get disabledStr => '';
 
   @HostBinding('class.is-disabled')
   bool get disabled => false;
+
+  @override
+  void ngOnInit() {}
+
+  @override
+  void ngOnDestroy() {}
+
+  @override
+  void ngAfterChanges() {}
 }
 
 @Directive(
@@ -69,7 +84,10 @@ class DirectiveWithOutput {
 @Component(
   selector: 'test-foo',
   template: r'''
-    <div some-child-directive directive-with-output [row]="rowIndex" (trigger)="onTrigger">
+    <div some-child-directive
+         directive-with-output
+         [row]="rowIndex"
+         (trigger)="onTrigger">
       Foo
     </div>
   ''',
@@ -84,37 +102,4 @@ class TestFooComponent {
 @Injectable()
 class MyInjectableClass {
   String get title => 'hello';
-}
-
-@Directive(
-  selector: '[fastDirective]',
-)
-class FastDirective extends ComponentState {
-  Element element;
-
-  @HostBinding('attr.data-msg')
-  String msg;
-  String _prevValue;
-
-  FastDirective(this.element);
-
-  @Input()
-  set name(String value) {
-    if (_prevValue == value) return;
-    _prevValue = value;
-    setState(() => msg = 'Hello $value');
-  }
-}
-
-@Component(
-  selector: 'directive-container',
-  template: r'''
-    <div class="target1" fastDirective [name]="finalName"></div>
-    <div class="target2" fastDirective [name]="nonFinal"></div>
-  ''',
-  directives: [FastDirective],
-)
-class DirectiveContainerTest {
-  final String finalName = "xyz";
-  String nonFinal = "abc";
 }

@@ -1,9 +1,10 @@
-import 'package:analyzer/analyzer.dart';
 import 'package:analyzer/dart/constant/value.dart';
 import 'package:analyzer/dart/element/element.dart';
+import 'package:analyzer/src/generated/utilities_dart.dart';
 import 'package:collection/collection.dart';
 import 'package:meta/meta.dart';
 import 'package:source_gen/source_gen.dart';
+import 'package:angular_compiler/cli.dart';
 
 import '../common.dart';
 import '../types.dart';
@@ -94,8 +95,10 @@ class DependencyReader {
     final positional = <DependencyElement>[];
     for (final parameter in parameters) {
       // ParameterKind.POSITIONAL is "optional positional".
+      // ignore: deprecated_member_use, no migration path
       bool isNamed() => parameter.parameterKind == ParameterKind.NAMED;
       bool isOptionalAndNotInjectable() =>
+          // ignore: deprecated_member_use, no migration path
           parameter.parameterKind == ParameterKind.POSITIONAL &&
           $Optional.firstAnnotationOfExact(parameter) == null &&
           $Inject.firstAnnotationOf(parameter) == null &&
@@ -125,8 +128,7 @@ class DependencyReader {
   ) {
     final constructor = findConstructor(element);
     if (constructor == null) {
-      // TODO(matanl): Log an exception instead of throwing.
-      throw StateError('Could not find a valid constructor for $element.');
+      BuildError.throwForElement(element, 'Could not find a valid constructor');
     }
     return _parseDependencies(constructor, constructor.parameters);
   }
@@ -159,14 +161,14 @@ class DependencyInvocation<E extends Element> {
   bool operator ==(Object o) =>
       o is DependencyInvocation<E> &&
       urlOf(bound) == urlOf(o.bound) &&
-      const ListEquality().equals(positional, o.positional) &&
-      const MapEquality().equals(named, o.named);
+      const ListEquality<Object>().equals(positional, o.positional) &&
+      const MapEquality<Object, Object>().equals(named, o.named);
 
   @override
   int get hashCode =>
       urlOf(bound).hashCode ^
-      const ListEquality().hash(positional) ^
-      const MapEquality().hash(named);
+      const ListEquality<Object>().hash(positional) ^
+      const MapEquality<Object, Object>().hash(named);
 
   @override
   String toString() =>

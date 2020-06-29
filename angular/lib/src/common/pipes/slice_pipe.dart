@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:angular/di.dart' show PipeTransform, Pipe;
+import 'package:angular/core.dart' show PipeTransform, Pipe;
 
 import 'invalid_pipe_argument_exception.dart' show InvalidPipeArgumentException;
 
@@ -65,16 +65,16 @@ class SlicePipe implements PipeTransform {
     start = start < 0 ? math.max(0, length + start) : math.min(start, length);
     if (end != null) {
       end = end < 0 ? math.max(0, length + end) : math.min(end, length);
-      if (end < start) return value is String ? '' : [];
+      if (end < start) return value is String ? '' : <Object>[];
     }
     if (value is String) {
       return value.substring(start, end);
-    } else if (value is List) {
+    } else if (value is List<Object>) {
       return value.sublist(start, end);
     } else {
       return null;
     }
   }
 
-  bool supports(dynamic obj) => obj is String || obj is List;
+  bool supports(dynamic obj) => obj is String || obj is List<Object>;
 }

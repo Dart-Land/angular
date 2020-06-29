@@ -2,7 +2,6 @@ import 'package:analyzer/dart/constant/value.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:angular_compiler/cli.dart';
 import 'package:code_builder/code_builder.dart';
-import 'package:collection/collection.dart' show mapMap;
 import 'package:meta/meta.dart' hide literal;
 import 'package:path/path.dart' as p;
 import 'package:source_gen/source_gen.dart';
@@ -69,17 +68,22 @@ class InjectorReader {
     this.doNotScope,
   }) : this.annotation = ConstantReader(
           $GenerateInjector.firstAnnotationOfExact(field),
-        );
+        ) {
+    _providers = _computeProviders(annotation, moduleReader);
+  }
 
   @alwaysThrows
-  void _throwParseError([DartObject context]) {
+  void _throwParseError([DartObject context, String message = '']) {
+    if (message != '') {
+      message = '. Additional information: $message';
+    }
     BuildError.throwForElement(
       field,
       context == null
           ? 'Unable to parse @GenerateInjector. You may have analysis errors'
           : 'Unable to parse @GenerateInjector. A provider\'s token ($context) '
-          'was read as "null". This is either invalid configuration or you '
-          'have analysis errors',
+              'was read as "null". This is either invalid configuration or you '
+              'have analysis errors$message',
     );
   }
 
@@ -92,22 +96,30 @@ class InjectorReader {
   }
 
   /// Providers that are part of the provided list of the annotation.
-  Iterable<ProviderElement> get providers {
-    if (_providers == null) {
-      final providersOrModules = annotation.read('_providersOrModules');
-      if (providersOrModules.isNull) {
-        _throwParseError();
-      }
-      try {
-        final module = moduleReader.parseModule(providersOrModules.objectValue);
-        _providers = moduleReader.deduplicateProviders(module.flatten());
-      } on NullTokenException catch (e) {
-        _throwParseError(e.constant);
-      } on NullFactoryException catch (e) {
-        _throwFactoryProvider(e.constant);
-      }
+  Iterable<ProviderElement> get providers => _providers;
+
+  Iterable<ProviderElement> _computeProviders(
+      ConstantReader annotation, ModuleReader moduleReader) {
+    final providersOrModules = annotation.read('_providersOrModules');
+    if (providersOrModules.isNull) {
+      _throwParseError();
     }
-    return _providers;
+
+    try {
+      final module = moduleReader.parseModule(providersOrModules.objectValue);
+      return moduleReader.deduplicateProviders(module.flatten());
+    } on UnsupportedProviderException catch (e) {
+      _throwParseError(e.constant, e.message);
+    } on NullTokenException catch (e) {
+      _throwParseError(e.constant);
+    } on NullFactoryException catch (e) {
+      _throwFactoryProvider(e.constant);
+    } on FormatException catch (e) {
+      _throwParseError(annotation.objectValue, e.message);
+    } on BuildError {
+      logWarning('An error occurred parsing providers on $doNotScope');
+      rethrow;
+    }
   }
 
   /// Creates a codegen reference to [symbol] in [url].
@@ -117,6 +129,10 @@ class InjectorReader {
   /// others cannot (i.e. those in a `test` directory), so we need to compute
   /// the relative path to them.
   Reference _referSafe(String symbol, String url) {
+    if (url == null) {
+      // The type dynamic has no URL.
+      return refer(symbol);
+    }
     final toUrl = Uri.parse(url);
     if (doNotScope != null && toUrl.scheme == 'asset') {
       return _referRelative(symbol, toUrl);
@@ -200,12 +216,12 @@ class InjectorReader {
         }
       }
       if (dep.optional) {
-        return refer('injectOptionalUntyped').call([
+        return refer('provideUntyped').call([
           _tokenToIdentifier(dep.token),
           literalNull,
         ]);
       } else {
-        return refer('inject').call([
+        return refer('this.get').call([
           _tokenToIdentifier(dep.token),
         ]);
       }
@@ -218,7 +234,16 @@ class InjectorReader {
     var index = 0;
     for (final provider in providers) {
       if (provider is UseValueProviderElement) {
-        final actualValue = _reviveAny(provider, provider.useValue);
+        Expression actualValue;
+        try {
+          actualValue = _reviveAny(provider, provider.useValue);
+        } on ReviveError catch (e) {
+          throw BuildError.forElement(
+              field,
+              'While reviving providers for Injector: $e\n'
+              'For complicated objects, use a FactoryProvider instead of '
+              'a ValueProvider');
+        }
         visitor.visitProvideValue(
           index,
           provider.token,
@@ -300,7 +325,7 @@ class InjectorReader {
           .map((a) => _reviveAny(provider, a))
           .toList();
       final namedArgs = invocation.namedArguments
-          .map((name, a) => new MapEntry(name, _reviveAny(provider, a)));
+          .map((name, a) => MapEntry(name, _reviveAny(provider, a)));
       final clazz = refer(name, '$import');
       if (invocation.accessor.isNotEmpty) {
         return clazz.constInstanceNamed(
@@ -335,13 +360,17 @@ class InjectorReader {
       }
       return literal(reader.literalValue);
     }
+    if (reader.isType) {
+      throw ReviveError(
+          'Reviving Types is not supported but tried to revive $object');
+    }
     final revive = reader.revive();
     if (revive != null) {
       return _revive(provider, revive);
     }
     // TODO(matanl): Make the error actionable after source_gen#374.
     // https://github.com/dart-lang/source_gen/issues/374
-    throw BuildError('Could not reference const object ($object)');
+    throw ReviveError('Could not reference const object ($object)');
   }
 
   Expression _reviveList(
@@ -354,9 +383,8 @@ class InjectorReader {
     UseValueProviderElement provider,
     Map<DartObject, DartObject> map,
   ) =>
-      literalConstMap(mapMap(map,
-          key: (DartObject k, DartObject v) => _reviveAny(provider, k),
-          value: (DartObject k, DartObject v) => _reviveAny(provider, v)));
+      literalConstMap(map.map((k, v) =>
+          MapEntry(_reviveAny(provider, k), _reviveAny(provider, v))));
 }
 
 /// To be implemented by an emitter class to create a `GeneratedInjector`.
@@ -415,4 +443,14 @@ abstract class InjectorVisitor {
     Expression value,
     bool isMulti,
   );
+}
+
+class ReviveError implements Exception {
+  final String message;
+  ReviveError(this.message);
+
+  @override
+  String toString() {
+    return message;
+  }
 }

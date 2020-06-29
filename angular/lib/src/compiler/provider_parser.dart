@@ -1,3 +1,4 @@
+import 'package:collection/collection.dart' show mergeSort;
 import 'package:source_span/source_span.dart';
 
 import '../core/metadata/visibility.dart';
@@ -61,12 +62,12 @@ class ProviderElementContext implements ElementProviderUsage {
   // True if parent is template or template has bindings.
   final bool _isViewRoot;
   final List<DirectiveAst> _directiveAsts;
-  SourceSpan _sourceSpan;
+  final SourceSpan _sourceSpan;
   CompileTokenMap<List<CompileQueryMetadata>> _contentQueries;
   final _transformedProviders = CompileTokenMap<ProviderAst>();
   final _seenProviders = CompileTokenMap<bool>();
   CompileTokenMap<ProviderAst> _allProviders;
-  final _attrs = <String, AttributeValue>{};
+  final _attrs = <String, AttributeValue<Object>>{};
   bool _requiresViewContainer = false;
 
   ProviderElementContext(
@@ -136,13 +137,26 @@ class ProviderElementContext implements ElementProviderUsage {
   }
 
   List<DirectiveAst> get transformedDirectiveAsts {
+    // Directives must be sorted according to the dependency graph between them.
+    // For example, if directive A depends on directive B, then directive B must
+    // be instantiated before A so that it's available for injection into A.
     var sortedProviderTypes = _transformedProviders.values
         .map((provider) => provider.token.identifier)
         .toList();
     var sortedDirectives = List<DirectiveAst>.from(_directiveAsts);
-    sortedDirectives.sort((dir1, dir2) =>
-        sortedProviderTypes.indexOf(dir1.directive.type) -
-        sortedProviderTypes.indexOf(dir2.directive.type));
+    // Components are an exception to the sorting rule mentioned above. Multiple
+    // components may match an element, but only the first is selected. It's
+    // important not to change the order of componenets relative to each other,
+    // so that the first component is reliably matched. (b/140618316).
+    int _compareDirectives(DirectiveAst dir1, DirectiveAst dir2) {
+      if (dir1.directive.isComponent && dir2.directive.isComponent) {
+        return 0;
+      }
+      return sortedProviderTypes.indexOf(dir1.directive.type) -
+          sortedProviderTypes.indexOf(dir2.directive.type);
+    }
+
+    mergeSort(sortedDirectives, compare: _compareDirectives);
     return sortedDirectives;
   }
 
@@ -265,9 +279,9 @@ class ProviderElementContext implements ElementProviderUsage {
     }
     if (dep.token != null) {
       // access built-ins
-      if ((requestingProviderType == ProviderAstType.Directive ||
+      if (requestingProviderType == ProviderAstType.Directive ||
           requestingProviderType == ProviderAstType.Component ||
-          requestingProviderType == ProviderAstType.FunctionalDirective)) {
+          requestingProviderType == ProviderAstType.FunctionalDirective) {
         if (dep.token.equalsTo(Identifiers.ElementRefToken) ||
             dep.token.equalsTo(Identifiers.HtmlElementToken) ||
             dep.token.equalsTo(Identifiers.ElementToken) ||
@@ -372,7 +386,7 @@ ProviderAst _transformProviderAst(ProviderAst provider,
     provider.providerType,
     provider.sourceSpan,
     eager: provider.eager || forceEager,
-    dynamicallyReachable: provider.dynamicallyReachable,
+    isReferencedOutsideBuild: provider.isReferencedOutsideBuild,
     visibleForInjection: provider.visibleForInjection,
     typeArgument: provider.typeArgument,
   );
@@ -389,7 +403,7 @@ List<CompileProviderMetadata> _normalizeProviders(
   targetProviders ??= <CompileProviderMetadata>[];
   if (providers != null) {
     for (var provider in providers) {
-      if (provider is List) {
+      if (provider is List<Object>) {
         _normalizeProviders(
             provider, sourceSpan, targetErrors, targetProviders);
       } else {

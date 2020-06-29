@@ -1,6 +1,57 @@
+## 2.0.0-alpha+24
+
+*   Maintenance release to support Angular 6.0-alpha+1.
+
+## 2.0.0-alpha+23
+
+### Bug fixes
+
+*   Navigation requests triggered by `popstate` events that redirect back to the
+    active route will now correctly update the browser location to match the
+    active route. Prior to this fix, the browser location would be left in the
+    state changed by the `popstate` event.
+
+*   The history stack prior to the current entry is now preserved when
+    preventing a navigation triggered by the back button. Previously, preventing
+    such a navigation would erase the previous history entry, causing subsequent
+    history manipulations to have unexpected results.
+
+## 2.0.0-alpha+22
+
+### New features
+
+*   `RouteDefinition.defer` now supports an optional `prefetcher` parameter
+    which can be defined to prefetch additional resources that are dependent on
+    the matched `RouterState`.
+
+*   The `RouteDefinition` subclasses `DeferredRouteDefinition`,
+    `RedirectRouteDefinition`, and `ComponentRouteDefinition` are now exported
+    from `package:angular_router/testing.dart`.
+
+### Bug fixes
+
+*   Deferred route loaders and prefetchers are no longer called a second time
+    when matched during route resolution.
+
+*   Navigation requests triggered by `popstate` events will now update the
+    browser location if the resulting navigation matches a redirecting route or
+    is transformed by a `RouterHook` implementation.
+
+## 2.0.0-alpha+21
+
+*   Maintenance release to support Angular 5.2.
+
+## 2.0.0-alpha+20
+
+### Bug fixes
+
+*   Fixed a discrepancy between the href rendered by `RouterLinkDirective`, and
+    the browser location to which it would navigate upon being clicked when
+    using `routerProvidersHash`.
+
 ## 2.0.0-alpha+19
 
-* Maintenance release to support Angular 5.0.
+*   Maintenance release to support Angular 5.0.
 
 ## 2.0.0-alpha+18
 
@@ -17,7 +68,7 @@
 
 ## 2.0.0-alpha+16
 
-*   Maintanence release; declare official support for the Dart2 SDK.
+*   Maintenance release; declare official support for the Dart2 SDK.
 
 ## 2.0.0-alpha+15
 

@@ -1,6 +1,4 @@
 import 'package:args/args.dart';
-import 'package:build/build.dart' as build;
-import 'package:logging/logging.dart';
 import 'package:meta/meta.dart';
 
 const _argProfileFor = 'profile';
@@ -8,7 +6,6 @@ const _argLegacyStyle = 'use_legacy_style_encapsulation';
 
 // Experimental flags (not published).
 const _argForceMinifyWhitespace = 'force-minify-whitespace';
-const _argI18nEnabled = 'i18n';
 const _argNoEmitComponentFactories = 'no-emit-component-factories';
 const _argNoEmitInjectableFactories = 'no-emit-injectable-factories';
 
@@ -30,7 +27,7 @@ class CompilerFlags {
     )
     ..addOption(
       _argProfileFor,
-      valueHelp: '"build" or "binding"',
+      valueHelp: '"build"',
       defaultsTo: null,
       help: ''
           'Whether to emit additional code that may be used by tooling '
@@ -38,11 +35,6 @@ class CompilerFlags {
     )
     ..addFlag(
       _argForceMinifyWhitespace,
-      defaultsTo: null,
-      hide: true,
-    )
-    ..addFlag(
-      _argI18nEnabled,
       defaultsTo: null,
       hide: true,
     )
@@ -55,12 +47,8 @@ class CompilerFlags {
       hide: true,
     );
 
-  /// Whether to emit extra code suitable for testing and local development.
-  @Deprecated('This value is always `false`')
-  final bool genDebugInfo;
-
-  /// May emit extra code suitable for profiling or tooling.
-  final Profile profileFor;
+  /// What (named) function types (typedefs) can be used as DI tokens.
+  final List<String> allowedTypeDefs;
 
   /// Whether to opt-in to supporting a legacy mode of style encapsulation.
   ///
@@ -98,9 +86,8 @@ class CompilerFlags {
   final bool exportUserCodeFromTemplate;
 
   const CompilerFlags({
-    this.genDebugInfo = false,
+    this.allowedTypeDefs = const [],
     this.ignoreNgPlaceholderForGoldens = false,
-    this.profileFor = Profile.none,
     this.useLegacyStyleEncapsulation = false,
     this.forceMinifyWhitespace = false,
     this.emitComponentFactories = true,
@@ -113,16 +100,12 @@ class CompilerFlags {
   /// Failures are reported to [logger].
   factory CompilerFlags.parseArgs(
     List<String> args, {
-    CompilerFlags defaultTo = const CompilerFlags(genDebugInfo: false),
-    Logger logger,
-    Level severity = Level.WARNING,
+    CompilerFlags defaultTo = const CompilerFlags(),
   }) {
     final results = _argParser.parse(args);
     return CompilerFlags.parseRaw(
       results,
       defaultTo,
-      logger: logger,
-      severity: severity,
     );
   }
 
@@ -132,21 +115,11 @@ class CompilerFlags {
   factory CompilerFlags.parseRaw(
     // Untyped because 'argResults' doesn't expose a Map interface.
     dynamic options,
-    CompilerFlags defaultTo, {
-    Logger logger,
-    Level severity = Level.WARNING,
-  }) {
-    // Use the default package:build logger if not specified, otherwise throw.
-    logger ??= build.log;
-    void log(dynamic message) {
-      if (logger == null) throw message;
-      logger.log(severity, message);
-    }
-
+    CompilerFlags defaultTo,
+  ) {
     // Check for invalid (unknown) arguments when possible.
-    if (options is Map) {
+    if (options is Map<Object, Object>) {
       final knownArgs = const [
-        _argI18nEnabled,
         _argProfileFor,
         _argLegacyStyle,
         _argForceMinifyWhitespace,
@@ -155,29 +128,19 @@ class CompilerFlags {
       ].toSet();
       final unknownArgs = options.keys.toSet().difference(knownArgs);
       if (unknownArgs.isNotEmpty) {
-        final message = 'Invalid arguments passed to the transformer: \n'
-            '  - ${unknownArgs.join('\n  - ')}\n\n'
-            'You may be providing flags that are no longer valid or supported '
-            'for AngularDart 5.x. See "compiler_flags.md" in the AngularDart '
-            'repository for a list of supported flags.';
+        final message = ''
+            'Invalid compiler arguments: \n'
+            '  - ${unknownArgs.join('\n  - ')}\n\n';
         throw ArgumentError(message);
       }
     }
 
-    if (options[_argI18nEnabled] != null) {
-      log('The "i18n" flag is no longer necessary as internationalization in '
-          'templates is enabled by default.');
-    }
-
-    final profileFor = options[_argProfileFor];
     final useLegacyStyle = options[_argLegacyStyle];
     final forceMinifyWhitespace = options[_argForceMinifyWhitespace];
     final noEmitComponentFactories = options[_argNoEmitComponentFactories];
     final noEmitInjectableFactories = options[_argNoEmitInjectableFactories];
 
     return CompilerFlags(
-      genDebugInfo: false,
-      profileFor: _toProfile(profileFor, log) ?? defaultTo.profileFor,
       useLegacyStyleEncapsulation:
           useLegacyStyle ?? defaultTo.useLegacyStyleEncapsulation,
       forceMinifyWhitespace:
@@ -185,34 +148,5 @@ class CompilerFlags {
       emitComponentFactories: !(noEmitComponentFactories == true),
       emitInjectableFactories: !(noEmitInjectableFactories == true),
     );
-  }
-}
-
-/// Optional configuration for emitting additional code for profiling.
-///
-/// See [CompilerFlags.profileFor].
-enum Profile {
-  /// No profiling is enabled.
-  none,
-
-  /// Profile component view construction performance.
-  build,
-
-  /// Profile component bindings (accessed methods and getters in components).
-  binding,
-}
-
-Profile _toProfile(dynamic profile, void log(dynamic message)) {
-  if (profile == null) return null;
-  switch (profile) {
-    case '':
-      return Profile.none;
-    case 'build':
-      return Profile.build;
-    case 'binding':
-      return Profile.binding;
-    default:
-      log('Invalid flag for "$_argProfileFor": $profile.');
-      return Profile.none;
   }
 }

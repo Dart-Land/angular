@@ -1,7 +1,6 @@
-import 'package:angular/src/facade/lang.dart' show jsSplit;
 import 'package:source_span/source_span.dart';
+import 'package:angular/src/facade/lang.dart' show jsSplit;
 
-import '../core/security.dart';
 import 'compile_metadata.dart'
     show
         CompileDirectiveMetadata,
@@ -10,6 +9,7 @@ import 'compile_metadata.dart'
 import 'expression_parser/parser.dart' show Parser;
 import 'parse_util.dart';
 import 'schema/element_schema_registry.dart' show ElementSchemaRegistry;
+import 'security.dart';
 import 'selector.dart' show CssSelector;
 import 'template_ast.dart'
     show BoundElementPropertyAst, BoundValue, PropertyBindingType, TemplateAst;
@@ -67,7 +67,8 @@ abstract class TemplateParser {
       String template,
       List<CompileDirectiveMetadata> directives,
       List<CompilePipeMetadata> pipes,
-      String name);
+      String name,
+      String templateSourceUrl);
 }
 
 typedef void ErrorCallback(String message, SourceSpan sourceSpan,
@@ -81,6 +82,7 @@ BoundElementPropertyAst createElementPropertyAst(
     ElementSchemaRegistry schemaRegistry,
     ErrorCallback reportError) {
   String unit;
+  String namespace;
   PropertyBindingType bindingType;
   String boundPropertyName;
   TemplateSecurityContext securityContext;
@@ -123,9 +125,8 @@ BoundElementPropertyAst createElementPropertyAst(
           elementName, schemaRegistry.getMappedPropName(boundPropertyName));
       var nsSeparatorIdx = boundPropertyName.indexOf(':');
       if (nsSeparatorIdx > -1) {
-        var ns = boundPropertyName.substring(0, nsSeparatorIdx);
-        var name = boundPropertyName.substring(nsSeparatorIdx + 1);
-        boundPropertyName = mergeNsAndName(ns, name);
+        namespace = boundPropertyName.substring(0, nsSeparatorIdx);
+        boundPropertyName = boundPropertyName.substring(nsSeparatorIdx + 1);
       }
       bindingType = PropertyBindingType.attribute;
     } else if (parts[0] == _classPrefix) {
@@ -144,6 +145,7 @@ BoundElementPropertyAst createElementPropertyAst(
     }
   }
   return BoundElementPropertyAst(
+    namespace,
     boundPropertyName,
     bindingType,
     securityContext,
@@ -154,7 +156,7 @@ BoundElementPropertyAst createElementPropertyAst(
 }
 
 List<String> _splitClasses(String classAttrValue) {
-  return jsSplit(classAttrValue.trim(), (RegExp(r'\s+')));
+  return jsSplit(classAttrValue.trim(), RegExp(r'\s+'));
 }
 
 CssSelector createElementCssSelector(
@@ -172,7 +174,7 @@ CssSelector createElementCssSelector(
     // attributes of an element here, we use exact match ('=') to specify that
     // the element has this attribute value.
     cssSelector.addAttribute(attrNameNoNs, '=', attrValue);
-    if (attrName.toLowerCase() == _classAttribute) {
+    if (attrName.toLowerCase() == _classAttribute && attrValue != null) {
       var classes = _splitClasses(attrValue);
       for (var className in classes) {
         cssSelector.addClassName(className);
@@ -196,8 +198,9 @@ List<T> removeDuplicates<T>(List<T> items) {
         CompileDirectiveMetadata itemMeta = item as CompileDirectiveMetadata;
         return rMeta.type.name == itemMeta.type.name &&
             rMeta.type.moduleUrl == itemMeta.type.moduleUrl;
-      } else
+      } else {
         throw ArgumentError();
+      }
     }).isNotEmpty;
     if (!hasMatch) {
       res.add(item);
@@ -207,7 +210,10 @@ List<T> removeDuplicates<T>(List<T> items) {
 }
 
 String mergeNsAndName(String prefix, String localName) {
-  return prefix != null ? '@$prefix:$localName' : localName;
+  if (prefix == null) return localName;
+  // At least one part is empty, this is not a valid namespaced token.
+  if (prefix == '' || localName == '') return '$prefix:$localName';
+  return '@$prefix:$localName';
 }
 
 final _nsPrefixRegExp = RegExp(r'^@([^:]+):(.+)');

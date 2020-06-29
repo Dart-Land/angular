@@ -95,7 +95,7 @@ void main() {
     setUp(() {
       completer = Completer();
       ref = MockChangeDetectorRef();
-      pipe = AsyncPipe((ref as dynamic));
+      pipe = AsyncPipe(ref as dynamic);
     });
     group('transform', () {
       test('should return null when subscribing to a promise', () {
@@ -167,7 +167,7 @@ void main() {
     test('should throw when given an invalid object', () {
       var pipe = AsyncPipe(null);
       expect(() => pipe.transform('some bogus object'),
-          throwsA(isInstanceOf<InvalidPipeArgumentException>()));
+          throwsA(TypeMatcher<InvalidPipeArgumentException>()));
     });
   });
 }

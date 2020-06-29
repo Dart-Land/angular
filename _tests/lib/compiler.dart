@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:glob/glob.dart';
-import 'package:angular/builder.dart';
+import 'package:angular/src/build.dart';
+import 'package:angular_compiler/angular_compiler.dart';
 import 'package:angular_compiler/cli.dart';
 import 'package:logging/logging.dart';
 import 'package:build/build.dart';
@@ -15,7 +16,6 @@ final Builder _testAngularBuilder = MultiplexingBuilder([
   templateCompiler(
     BuilderOptions({}),
     defaultFlags: const CompilerFlags(
-      genDebugInfo: false,
       ignoreNgPlaceholderForGoldens: true,
     ),
   ),
@@ -30,7 +30,7 @@ final Future<PackageAssetReader> _packageAssets = (() async {
   if (runfiles == null) {
     return PackageAssetReader.currentIsolate();
   }
-  final root = const String.fromEnvironment('PKG_ANGULAR_ROOT');
+  final root = Platform.environment['PKG_ANGULAR_ROOT'];
   final path = '$runfiles/$root';
   if (!FileSystemEntity.isFileSync('$path/lib/angular.dart')) {
     throw StateError('Could not find $path/lib/angular.dart');
@@ -91,16 +91,21 @@ Future<Null> _testBuilder(
 
   final logger = Logger('_testBuilder');
   final logSub = logger.onRecord.listen(onLog);
-  await runBuildZoned(() {
-    return runBuilder(
-      builder,
-      inputIds,
-      reader,
-      writer,
-      AnalyzerResolvers(),
-      logger: logger,
-    );
-  });
+  await runBuildZoned(
+    () {
+      return runBuilder(
+        builder,
+        inputIds,
+        reader,
+        writer,
+        AnalyzerResolvers(),
+        logger: logger,
+      );
+    },
+    zoneValues: {
+      CompileContext: CompileContext(),
+    },
+  );
   await logSub.cancel();
 }
 
@@ -142,43 +147,37 @@ Future<Null> compilesExpecting(
   }..addAll(include);
 
   // Run the builder.
-  final records = <Level, List<String>>{};
+  final records = <Level, List<LogRecord>>{};
   await _testBuilder(_testAngularBuilder, sources, onLog: (record) {
-    var message = record.message;
-    if (record.error != null) {
-      message += '\nERROR: ${record.error}';
-    }
-    records.putIfAbsent(record.level, () => []).add(message);
+    records.putIfAbsent(record.level, () => []).add(record);
   });
 
-  if (errors != null) {
-    final logs = records[Level.SEVERE] ?? [];
-    expect(
-      logs,
-      errors,
-      reason: 'Errors: \n${logs.join('\n')}',
-    );
-  }
-  if (warnings != null) {
-    final logs = records[Level.WARNING] ?? [];
-    expect(
-      logs,
-      warnings,
-      reason: 'Warnings: \n${logs.join('\n')}',
-    );
-  }
-  if (notices != null) {
-    final logs = records[Level.INFO] ?? [];
-    expect(
-      logs,
-      notices,
-      reason: 'Notices: \n${logs.join('\n')}',
-    );
-  }
+  expectLogRecords(records[Level.SEVERE], errors, 'Errors');
+  expectLogRecords(records[Level.WARNING], warnings, 'Warnings');
+  expectLogRecords(records[Level.INFO], notices, 'Notices');
+
   if (outputs != null) {
     // TODO: Add an output verification or consider a golden file mechanism.
     throw UnimplementedError();
   }
+}
+
+void expectLogRecords(List<LogRecord> logs, matcher, String reasonPrefix) {
+  if (matcher == null) {
+    return;
+  }
+  logs ??= [];
+  expect(logs.map(formattedLogMessage), matcher,
+      reason:
+          '$reasonPrefix: \n${logs.map((l) => '${formattedLogMessage(l)} at:\n ${l.stackTrace}')}');
+}
+
+String formattedLogMessage(LogRecord record) {
+  var message = record.message;
+  if (record.error != null) {
+    message += '\nERROR: ${record.error}';
+  }
+  return message;
 }
 
 /// Returns a future that completes, asserting no errors or warnings occur.
@@ -196,3 +195,8 @@ Future<Null> compilesNormally(
       errors: isEmpty,
       warnings: isEmpty,
     );
+
+/// Match for a source location, but don't require tests to manage package
+/// names.
+Matcher containsSourceLocation(int line, int column) =>
+    contains("line $line, column $column of ");

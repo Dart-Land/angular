@@ -1,5 +1,452 @@
 ### New features
 
+*   Added `debugClearComponentStyles()`. This top-level function resets all
+    static state used for component styles, and removes all component `<style>`
+    tags from the DOM. This can be called to prevent styles leaking between DDC
+    hot restarts or hermetic test cases. It can only be called in development
+    mode.
+
+*   Added `@i18n.locale`. This annotation overrides the locale of the message to
+    use, even if a translation is available for the current locale.
+
+    ```html
+    <!-- Use "en_US" even if translation for current locale exists. -->
+    <div @i18n="..." @i18n.locale="en_US">...</div>
+    ```
+
+*   Added `debugCheckBindings()`. This top-level function opts in to stricter
+    checking for template bindings and interpolation, and will often have some
+    contextual information (expression source and source location) for the
+    underlying failure. See `/docs/advanced/debugging.md` for details.
+
+*   Added `ChangeDetectorRef.markChildForCheck()`. This method can be used to
+    mark a child query for change detection when the underlying result is a
+    component that uses the OnPush change detection strategy.
+
+    ```
+    @Component(
+      selector: 'example',
+      template: '<ng-content></ng-content>',
+      changeDetection: ChangeDetectionStrategy.OnPush,
+    )
+    class ExampleComponent {
+      ExampleComponent(this._changeDetectorRef);
+
+      final ChangeDetectorRef _changeDetectorRef;
+
+      @ContentChildren(Child),
+      List<Child> children;
+
+      void updateChildren(Model model) {
+        for (final child in children) {
+          // If child is implemented by an onPush component, imperatively
+          // mutating a property like this won't be observed without marking the
+          // child to be checked.
+          child.model = model;
+          _changeDetectorRef.markChildForCheck(child);
+        }
+      }
+    }
+    ```
+
+    Prefer propagating updates to children through the template over this method
+    when possible. This method is intended to faciliate migrating existing
+    components to use OnPush change detection.
+
+    See `ChangeDetectorRef.markChildForCheck()` documentation for more details.
+
+*   The compiler now issues a warning when a component that doesn't use
+    "ChangeDetectionStrategy.OnPush" is used by a component that does. This is
+    unsupported and likely to cause bugs, as the component's change detection
+    contract can't be upheld.
+
+### Breaking changes
+
+*   Warn for all unknown properties in a template.
+
+    Previously, we would skip the warning for tags that contained `-`, as a
+    compatibility layer for custom web elements. Now that most of our users have
+    migrated away from custom elements, such as from Polymer, we are going to
+    strictly enforce unknown properties with a warning.
+
+*   Event bindings no longer support multiple statements.
+
+    Supported:
+
+    ```html
+    <!-- Bind method named "handleClick" (both equivalent) -->
+    <button (click)="handleClick"></button>
+    <button (click)="handleClick($event)"></button>
+
+    <!-- Execute a single statement -->
+    <button (click)="isPopupVisible = true"></button>
+    ```
+
+    Not supported:
+
+    ```html
+    <!-- Execute multiple statements -->
+    <button (click)="isPopupVisible = true; $event.stopPropagation()"></button>
+    ```
+
+    To execute multiple statements, define and bind a method.
+
+*   `TemplateSecurityContext` is no longer exported by
+    `package:angular/security.dart`. This enum is only used during compilation
+    and has no purpose in client code.
+
+## 6.0.0-alpha+1
+
+### New features
+
+*   Added `ComponentRef.update()`. This method should be used to apply changes
+    to a component and then trigger change detection. Before this, change
+    detection and lifecycles would not always follow Angular's specifications
+    when imperatively loading a component, especialy for those using the OnPush
+    change detection strategy.
+
+    ```dart
+    final componentRef = componentFactory();
+    componentRef.update((component) {
+      component.input = newValue;
+    });
+    ```
+
+*   Added `@changeDetectionLink` to `package:angular/experimental.dart`.
+
+    This annotation allows a component that imperatively loads another component
+    from a user-provided factory to adopt the OnPush change detection strategy,
+    without dictacting the change detection strategy of the component created
+    from the factory. This allows such a component to be used in both Default
+    and OnPush apps.
+
+    An annotated component will serve as a link between an ancestor and an
+    imperatively loaded descendant that both use the Default change detection
+    strategy. This link is used to change detect the descendant anytime the
+    ancestor is change detected, thus honoring its Default change detection
+    contract. Without this annotation, the descendant would be skipped anytime
+    the annotated OnPush component had not been marked to be checked.
+
+    For more details, see this annotation's documentation.
+
+## 6.0.0-alpha
+
+### New features
+
+*   An eager error is emitted when a non-`.css` file extension is used within a
+    `@Component(styleUrls: [ ... ])`. This used to fail later in the compile
+    process with a confusing error (cannot find asset).
+
+### Breaking changes
+
+*   The `OnChanges` lifecycle has been completely removed. Use `AfterChanges`
+    instead.
+
+*   `ExceptionHandler` is no longer exported via `angular/di.dart`. Import this
+    symbol via `angular/angular.dart` instead.
+
+*   Directives no longer support extending, implementing, or mixing in
+    `ComponentState`.
+
+*   The `/deep/` and `>>>` combinators are no longer supported in style sheets
+    of components with style encapsulation enabled. The special `::ng-deep`
+    pseudo-element should be used in their stead to pierce style encapsulation
+    when necessary.
+
+*   `ChangeDetectorRef.checkNoChanges()` has been removed from the public API.
+
+*   Removed `ExpressionChangedAfterItHasBeenCheckedException`. It is supported
+    for end-users to interact with this object (it is now private to the
+    framework).
+
+*   Map literals (i.e. `{foo: bar}`) are no longer supported within the template
+    and throw a compile-time error. Move code that constructs or maintains Map
+    instances inside of your `@Component`-annotated Dart class, or prefer syntax
+    such as `[class.active]="isActive"` over `[ngClass]="{'active': isActive}"`.
+
+*   Asynchronous (i.e. "long") stack traces are now disabled by default, even in
+    debug mode. To enable them for your app or tests, add the following line to
+    your `main()` function before starting an app:
+
+    ```dart
+    import 'package:angular/angular.dart';
+
+    void main() {
+      ExceptionHandler.debugAsyncStackTraces();
+      // Now run your app/tests.
+    }
+    ```
+
+    We would like feedback if this feature is required for your team, otherwise
+    we are considering removing it all together in a future release of
+    AngularDart.
+
+*   `ChangeDetectionStrategy.Stateful` was removed. It always served as an alias
+    for extending or mixing-in `ComponentState`, and was found to be confusing.
+
+### Deprecations
+
+*   Deprecated `ChangeDetectorRef.detach()` and `ChangeDetectorRef.reattach()`.
+    Components that rely on these methods should use `changeDetection:
+    ChangeDetectionStrategy.OnPush` instead.
+
+*   Deprecated `ComponentState`. Under the hood, it now delegates and uses the
+    same mechanisms as `ChangeDetectionStrategy.OnPush`, and it is now
+    recommended to use `ChangeDetectionStrategy.OnPush` over extending or
+    mixing-in the `ComponentState` class.
+
+### Bug fixes
+
+*   Issue a compile-time error on an invalid `styleUrl`. Previously some URLs
+    that were invalid (i.e. an unsupported schema) were skipped, leading to
+    confusing behavior for users.
+
+## 5.3.0
+
+### New features
+
+*   The template compiler issues a warning if a component that does not project
+    content has children. Previously, these nodes were created and never
+    attached. Now the nodes are not created at all.
+
+*   Specialized interpolation functions for Strings.
+
+*   Optimization: Removes toString() calls of interpolated strings bound to
+    properties.
+
+*   The compiler now uses superclass information to determine immutability.
+
+*   Added `Injector.provideTypeOptional` and `Injector.provideTokenOptional`.
+
+*   The compiler now optimizes string bindings inside `NgFor` loops.
+
+*   The compiler now adds type information to local variables in nested `NgFor`
+    loops.
+
+*   The compiler now includes source locations to errors in annotations on class
+    members.
+
+*   The compiler now optimizes change detection for HTML Text nodes.
+
+*   Disabled an optimization around pure-HTML DOM nodes wrapped in a `*ngIf`. In
+    practice this optimization only kicked in for a few views per application
+    and had a high runtime cost as well as a high overhead for the framework
+    team. We have added and expect to add additional optimizations around the
+    size of generated views.
+
+### Bug fixes
+
+*   The template compiler now outputs the full path to a template file when it
+    reports an error.
+
+*   [#1694][]: Composite `keyup` and `keydown` event bindings now ignore
+    synthetic events (e.g. those triggered by a mouse click) instead of throwing
+    a `TypeError`.
+
+*   [#1669][]: Fixed a regression which prevented a pipe invoked with more than
+    two arguments from being passed as an argument to a function.
+
+*   The compiler emits source locations for errors in Dart files when using an
+    `AnalysisDriver`.
+
+*   Internationalized attribute, property, and input bindings will now properly
+    escape characters in the message that would invalidate the generated string
+    (such as `\n`, `$`, and `'`). This behavior is now consistent with
+    internationalized text and HTML.
+
+*   The template compiler no longer crashes on HTML attributes ending in ":"
+
+*   When querying for a directive present in multiple embedded views (portions
+    of the template controlled by a structural directive such as `*ngIf`) with
+    `@ViewChildren()`, the directives in the resulting list are now in the same
+    order as they appear in the template. Prior to this fix, directives in
+    nested embedded views would occur *before* those in their parent view.
+
+*   The template compiler now properly updates class statements for "literal
+    attributes". Previously, we did not shim these classes correctly. This
+    includes both raw attributes (e.g. `class="foo"`) and host bindings (e.g.
+    `@HostBinding('class')`).
+
+*   The presence of a query (e.g. `@ContentChild(TemplateRef)`) no longer causes
+    any matching `<template>` references to become available for dynamic
+    injection (i.e. `injector.provideType(TemplateRef)`).
+
+*   The template compiler now properly updates class bindings on SVG elements.
+    Previously, we did not shim these classes correctly.
+
+*   When using `runAppAsync`, `beforeComponentCreated` now runs within `NgZone`
+    which previously surfaced bugs when services created and initialized in this
+    callback did not trigger change detection.
+
+*   The style sheet compiler will no longer emit invalid Dart code when a style
+    sheet is placed within a directory whose name is not a valid Dart
+    identifier.
+
+*   The template compiler will now report a helpful error message when an
+    `@i18n.skip` annotation has no corresponding `@i18n` description, instead of
+    throwing an unhandled error.
+
+### Breaking changes
+
+*   Removed `castCallback2ForDirective` from `meta.dart`. In practice this was
+    not used. We also deprecated `castCallback1ForDirective` now that the
+    `directiveTypes: [ ... ]` feature is live.
+
+*   Removed deprecated `AppViewUtils.resetChangeDetection()`. This method was
+    never intended to be used in the public API, and is no longer used by our
+    own infra.
+
+*   Using anything but `ChangeDetectionStrategy.{Default|OnPush}` is considered
+    deprecated, as they were not intended to be publicly accessible states. See
+    the deprecation messages for details.
+
+*   `ViewContainerRef.get()` now returns a `ViewRef` instead of an
+    `EmbeddedViewRef`.
+
+    For context, `ViewContainerRef` supports inserting both host views (created
+    via `ComponentFactory`) and embedded views (created via `TemplateRef`).
+    Today, `EmbeddedViewRef` can reference either kind of view, but in the
+    future it will only reference the latter, for which its methods are actually
+    relevant (for example setting locals has no purpose on host views). This
+    change is in preperation for when a host view reference may not implement
+    `EmbeddedViewRef`.
+
+[#1694]: https://github.com/dart-lang/angular/issues/1694
+[#1669]: https://github.com/dart-lang/angular/issues/1669
+
+### Deprecations
+
+*   `OnChanges` is now officially deprecated. Please use `AfterChanges` instead.
+
+    *   If you don't use the `changes` map at all, just remove the parameter and
+        you're good to go.
+    *   If you are only tracking the change of one or two fields, consider using
+        a boolean, i.e. `valueChanged`, which can be set in the `value` setter
+        and then checked in `ngAfterChanges`.
+    *   If you are making extensive use of the `changes` map, then consider
+        recreating the map manually.
+
+## 5.2.0
+
+### Breaking changes
+
+*   The template parser no longer supports styles defined inside the template
+    itself.
+
+    Previously, the following two snippets would have been parsed and shimmed in
+    the same way.
+
+    ```html
+    <style> .my-class {padding: 10px;} </style>
+    ```
+
+    ```dart
+    @Component(
+      styles: ['.other-class {padding: 10px;}'],
+    )
+    class ExampleComponent{}
+    ```
+
+    Now, only the latter will be parsed and shimmed. The former will be ignored.
+
+*   The template parser no longer supports loading stylesheets defined in an
+    `<link>` tag in the template itself.
+
+    Previously, the following two snippets would have loaded the exact same
+    stylesheet.
+
+    ```html
+    <link href="my-styles.css" rel="stylesheet" />
+    ```
+
+    ```dart
+    @Component(
+      styleUrls: ['my-styles.css'],
+    )
+    class ExampleComponent {}
+    ```
+
+    Now, only the latter will actually be loaded. The former will be ignored.
+
+*   The deprecated field, `ComponentRef.componentType`, which always threw, has
+    now been completely removed. This was a legacy field for older clients of
+    AngularDart.
+
+### New features
+
+*   Better error messages in the compiler by failing fast on all analyzer errors
+    in element annotations (@Component, etc) and passing the analyzer error
+    messages to the user.
+
+*   Added `runAfterChangesObserved` to `NgZone`. This API is intended to be a
+    more precise way to execute code _after_ AngularDart would have run change
+    detection (instead of relying on `scheduleMicrotask` or `Timer.run`).
+
+*   Added new type-safe ways to use the `Injector` API without dynamic calls:
+
+    ```dart
+    void example(Injector injector) {
+      // Injecting "SomeType".
+      // Before:
+      var someType1 = injector.get(SomeType) as SomeType;
+
+      // After:
+      var someType2 = injector.provide<SomeType>();
+
+      // Injecting "OpaqueToken<SomeType>(...)".
+      // Before:
+      var someToken1 = injector.get(someToken) as SomeType;
+
+      // After:
+      var someToken2 = injector.provideToken(someToken);
+    }
+    ```
+
+*   The code in generated `AppView` no longer performs null safety `?.` checks
+    when calling child views `.destroy()` or `.destroyNestedViews()`. This means
+    that misbehaving code could have slightly more confusing stack traces (new
+    null errors), at the benefit of reduced code-size across the board.
+
+*   It's now a build error for `@Component()` to include an entry in
+    `directiveTypes` that types a directive not present in `directives`.
+
+### Bug fixes
+
+*   [#1653][]: `AppView.lastRootNode` now correctly returns the last root node
+    when multiple `ViewContainer`s are directly nested.
+
+*   When using the `@deferred` annotation in a template file, ensure that the
+    constructed component class uses the _deferred_ import. For example, we now
+    emit `deflib1.ComponentName(...)` instead of `lib1.ComponentName(...)`. This
+    should ensure Dart2JS properly defer loads the entire component.
+
+*   Typing a generic directive with a private type argument is now a build
+    error. Directive type arguments must be public so that they can be
+    referenced by the generated library that instantiates the directive.
+    Previously, this would build successfully but emit code that instantiated
+    the directive with `dynamic` in place of the private type.
+
+*   [#1665][]: `@Optional()` dependencies of pipes are now correctly treated as
+    optional. Previously the annotation was ignored, and attempting to
+    instantiate the pipe with a missing optional dependency would throw an error
+    for the missing dependency.
+
+*   [#1666][]: Properly emit calls from event bindings in templates where the
+    tear-off function has one or more named arguments. Previously we would
+    consider named arguments in the same vane as positional, and it would
+    generate invalid code causing Dart2JS or DDC to fail compilation.
+
+*   The `@deferred` annotation now also defers the annotated component's
+    defining library, rather than just its generated template's library.
+
+[#1653]: https://github.com/dart-lang/angular/issues/1653
+[#1665]: https://github.com/dart-lang/angular/issues/1665
+[#1666]: https://github.com/dart-lang/angular/issues/1666
+
+## 5.1.0
+
+### New features
+
 *   Added support for generic components and directives.
 
     Type arguments can now be specified for any generic components and
@@ -104,9 +551,8 @@
     Note that internationalization in templates currently only supports messages
     with static text and HTML. See the [example][i18n_example] for more details.
 
-[intl]: https://pub.dartlang.org/packages/intl
+[intl]: https://pub.dev/packages/intl
 [i18n_example]: https://github.com/dart-lang/angular/blob/master/examples/i18n
-
 
 ### Bug fixes
 
@@ -151,13 +597,13 @@
     ```
 
     ... additionally, a check for a race condition of the deferred component
-    being loaded _after_ the parent view was already destroyed was added. As
-    a result, [#1540][] has also been fixed (view and content queries were not
+    being loaded _after_ the parent view was already destroyed was added. As a
+    result, [#1540][] has also been fixed (view and content queries were not
     getting reset as the `@deferred` node was destroyed).
 
 *   [#880][]: Fixed a bug where an extraneous space in `*ngFor` micro expression
-    caused the directive to no longer be functional
-    (`*ngFor="let x; let i = $index "`, for example).
+    caused the directive to no longer be functional (`*ngFor="let x; let i =
+    $index "`, for example).
 
 *   [#1570][]: When a provider's `token` for `@GeneratedInjector(...)` is read
     as `null` (either intentionally, or due to analysis errors/imports missing)
@@ -173,24 +619,43 @@
     `*ngFor="let item of items;"` - note the trailing `;`), throws a proper
     unexpected token error instead of a confusing type error during recovery.
 
-*   [#1500][]: Configuring a provider with `FactoryProvider(Foo, null)` is now
-    a compile-time error, instead of a misleading runtime error.
+*   [#1500][]: Configuring a provider with `FactoryProvider(Foo, null)` is now a
+    compile-time error, instead of a misleading runtime error.
 
 *   [#1591][]: Using `@GenerateInjector` with a `ValueProvider` bound to a
     `String` instance that expects a _raw_ string (i.e `r'$5.00'`) no longer
     generates invalid code. Now _all_ strings are emitted as _raw_.
 
-*   [#1598][]: Using `@GenerateInjector` with a `ValueProvider` whose value
-    is created as a `const` object with _named_ arguments is now created
-    correctly. Before, all named arguments were skipped (left to default values,
-    which was often `null`).
+*   [#1598][]: Using `@GenerateInjector` with a `ValueProvider` whose value is
+    created as a `const` object with _named_ arguments is now created correctly.
+    Before, all named arguments were skipped (left to default values, which was
+    often `null`).
 
-*   `@GenerateInjector(...)` now correctly solves duplicate tokens by having
-    the _last_, not _first_, provider win. This aligns the semantics with how
-    the other injector implementations work. For `MultiToken`, the order stays
-    the same.
+*   `@GenerateInjector(...)` now correctly solves duplicate tokens by having the
+    _last_, not _first_, provider win. This aligns the semantics with how the
+    other injector implementations work. For `MultiToken`, the order stays the
+    same.
 
 *   Clarified that `Injector.map({...})` doesn't support `null` as values.
+
+*   Named arguments are now supported for function calls in templates where the
+    function is an exported symbol (`Component(exports: [someFunction])`).
+
+*   [#1625][]: Named arguments in function calls in templates that collide with
+    an exported symbol (`Component(exports: [someExport])`) no longer cause a
+    parsing error.
+
+*   Whitespace in internationalized message descriptions and meanings is now
+    normalized so they're no longer affected by formatting changes. Identical
+    messages with meanings that are formatted differently will now properly be
+    treated as the same message.
+
+*   [#1633][]: Using a function type or any non-class `Type` inside of the
+    `@GenerateInjector([...])` annotation would cause a non-ideal error to be
+    produced. It now includes more information where available.
+
+*   Error ranges for invalid code sometimes listed the error offset as if it
+    were a column on line 1. Now shows correct line and column number.
 
 [#434]: https://github.com/dart-lang/angular/issues/434
 [#880]: https://github.com/dart-lang/angular/issues/880
@@ -204,13 +669,19 @@
 [#1570]: https://github.com/dart-lang/angular/issues/1570
 [#1591]: https://github.com/dart-lang/angular/issues/1591
 [#1598]: https://github.com/dart-lang/angular/issues/1598
+[#1625]: https://github.com/dart-lang/angular/issues/1625
+[#1633]: https://github.com/dart-lang/angular/issues/1633
 
 ### Other improvements
 
 *   Error messages for misconfigured pipes now display their source location.
+
 *   Assertion added for ensuring different SanitizationServices aren't used when
     calling runApp multiple times. SanitizationService is a static resource so
     different instances would not work as expected.
+
+*   `AppViewUtils.resetChangeDetection()` is now deprecated and will be removed
+    in the next major release.
 
 ## 5.0.0
 
@@ -220,13 +691,12 @@ this release is not compatible with older versions of Dart 1.XX. Additionally:
 *   _Dartium_ is no longer supported. Instead, use the new
     [DartDevCompiler](https://webdev.dartlang.org/tools/dartdevc)
 *   Pub _transformers_ are no longer used. Instead, use the new
-    [webdev](https://pub.dartlang.org/packages/webdev) CLI, or, for advanced
-    users, the [build_runner](https://pub.dartlang.org/packages/build_runner)
-    CLI.
+    [webdev](https://pub.dev/packages/webdev) CLI, or, for advanced users, the
+    [build_runner](https://pub.dev/packages/build_runner) CLI.
 
 More details of
 [changes to Dart 2 for web users](https://webdev.dartlang.org/dart-2) are
-available on our webiste.
+available on our website.
 
 **Thanks**, and enjoy AngularDart!
 
@@ -696,7 +1166,7 @@ everyone).
     annotations (`@Input()`, `@Output()`, `@HostBinding()`, `@HostListener()`)
     instead.
 
-*   The default for `@Component(preserveWhitespace: ...)` is now `true`. Many
+*   The default for `@Component(preserveWhitespace: ...)` is now `false`. Many
     improvements were put into the whitespace optimziation in order to make the
     results easier to understand and work around.
 

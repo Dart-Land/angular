@@ -8,13 +8,15 @@ analyzer:
     # Allow importing .template.dart files without an analyzer error.
     uri_has_not_been_generated: ignore
 
-    # The noise of deprecations isn't worth the effort.
-    deprecated_member_use: ignore
+    # Ignore our own deprecated symbols.
+    deprecated_member_use_from_same_package: ignore
   exclude:
     - .dart_tool/**
     - build/**
     # TODO(https://github.com/dart-lang/angular/issues/1508)
     - examples/hacker_news_pwa/test/**
+  plugins:
+    - angular
 
 linter:
   rules:
@@ -42,7 +44,6 @@ linter:
     - prefer_final_fields
     - prefer_is_not_empty
     - slash_for_doc_comments
-    - super_goes_last
     - test_types_in_equals
     - throw_in_finally
     - type_init_formals

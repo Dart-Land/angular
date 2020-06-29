@@ -47,6 +47,23 @@ class UsesGenericComp {
   var binding = 5;
 }
 
+// A generic component that uses [GenericComp]
+@Component(
+  selector: 'comp',
+  directives: [
+    GenericComp,
+  ],
+  directiveTypes: [
+    Typed<GenericComp>.of([
+      Typed<List>.of([#E])
+    ])
+  ],
+  template: '<comp [input]="binding"></comp>',
+)
+class UsesGenericCompGeneric<E> {
+  var binding = ['Hello'];
+}
+
 /// A component with two type parameters, each with a separate `@Input()`.
 @Component(
   selector: 'comp',
@@ -72,8 +89,8 @@ class MappingComp1<K, V> {
   template: '<comp [key]="bindKey" [value]="bindValue"></comp>',
 )
 class UsesMappingComp1 {
-  var key = 5;
-  var value = 'Hello';
+  var bindKey = 5;
+  var bindValue = 'Hello';
 }
 
 /// A component with two type parameters, but with a single `@Input()`.
@@ -178,6 +195,10 @@ class RecursiveComp<T extends Comparable<T>> {
   directives: [
     RecursiveComp,
   ],
+  directiveTypes: [
+    Typed<RecursiveComp<num>>(),
+  ],
+  // TODO(b/136190142): This should not be a warning.
   template: '<comp [input]="binding"></comp>',
 )
 class UsesRecursiveComp {

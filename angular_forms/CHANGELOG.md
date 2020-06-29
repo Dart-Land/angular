@@ -1,3 +1,21 @@
+## 2.1.4
+
+*   Maintenance release to support Angular 6.0-alpha+1.
+
+## 2.1.3
+
+*   Maintenance release to support Angular 6.0-alpha.
+
+## 2.1.2
+
+*   Maintenance release to support Angular 5.3.
+
+## 2.1.1
+
+*   Maintenance release to support Angular 5.2.
+
+## 2.1.0
+
 ### New Features
 
 *   `PatternValidator` now has a `pattern` input. This allows the `pattern`

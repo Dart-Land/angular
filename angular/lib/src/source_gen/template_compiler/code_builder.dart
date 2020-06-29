@@ -6,16 +6,6 @@ import 'package:code_builder/code_builder.dart';
 
 import 'template_compiler_outputs.dart';
 
-const _ignoredProblems = <String>[
-  'cancel_subscriptions',
-  'constant_identifier_names',
-  'duplicate_import',
-  'non_constant_identifier_names',
-  'library_prefixes',
-  'UNUSED_IMPORT',
-  'UNUSED_SHOWN_NAME',
-];
-
 String buildGeneratedCode(
   LibraryElement element,
   TemplateCompilerOutputs outputs,
@@ -24,12 +14,6 @@ String buildGeneratedCode(
   CompilerFlags flags,
 ) {
   final buffer = StringBuffer();
-
-  // Avoid strong-mode warnings that are not solvable quite yet.
-  if (_ignoredProblems.isNotEmpty) {
-    var problems = _ignoredProblems.join(',');
-    buffer.writeln('// ignore_for_file: $problems');
-  }
 
   // Generated code.
   final allocator = Allocator.simplePrefixing();
@@ -48,34 +32,6 @@ String buildGeneratedCode(
   buffer.writeln("import '$sourceFile';");
   if (flags.exportUserCodeFromTemplate) {
     buffer.writeln("export '$sourceFile';");
-  }
-
-  // TODO(matanl): Add this as a helper function in angular_compiler.
-  // Write all other imports out directly.
-  for (final d in element.imports) {
-    if (!d.isDeferred && d.uri != null) {
-      var directive = "import '${d.uri}'";
-      if (d.prefix != null) {
-        directive += ' as ${d.prefix.name}';
-      }
-      if (d.combinators.isNotEmpty) {
-        final isShow = d.combinators.first is ShowElementCombinator;
-        directive += isShow ? ' show ' : ' hide ';
-        directive += d.combinators
-            .map((c) {
-              if (c is ShowElementCombinator) {
-                return c.shownNames;
-              }
-              if (c is HideElementCombinator) {
-                return c.hiddenNames;
-              }
-              return const [];
-            })
-            .expand((i) => i)
-            .join(', ');
-      }
-      buffer.writeln('$directive;');
-    }
   }
 
   // Write imports required for initReflector.

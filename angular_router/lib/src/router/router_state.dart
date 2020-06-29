@@ -46,9 +46,9 @@ class RouterState extends Url {
 /// maintains a list of outlets and components that will be attached. These
 /// are [QueueList]s so that elements can be added in the front or back.
 class MutableRouterState {
-  final List<ComponentRef> components = [];
-  final Map<ComponentRef, ComponentFactory> factories = {};
-  final Map<String, String> parameters = {};
+  final List<ComponentRef<Object>> components = [];
+  final Map<ComponentRef<Object>, ComponentFactory<Object>> factories = {};
+  final List<Map<String, String>> _parameterStack = [];
   final List<RouteDefinition> routes = [];
 
   String fragment = '';
@@ -57,10 +57,40 @@ class MutableRouterState {
 
   MutableRouterState();
 
+  Map<String, String> get parameters {
+    var result = <String, String>{};
+    for (var p in _parameterStack) {
+      result.addAll(p);
+    }
+    return result;
+  }
+
   RouterState build() {
     return RouterState(path, routes.toList(),
         fragment: fragment,
         queryParameters: queryParameters,
         parameters: parameters);
+  }
+
+  /// Pushes a [route] and its [match].
+  void push(RouteDefinition route, Match match) {
+    routes.add(route);
+    _parameterStack.add(_parameters(route, match));
+  }
+
+  /// Pops the last pushed [RouteDefinition] and its [Match].
+  void pop() {
+    routes.removeLast();
+    _parameterStack.removeLast();
+  }
+
+  /// Returns [route] [parameters] from [match], mapped from name to value.
+  Map<String, String> _parameters(RouteDefinition route, Match match) {
+    var result = <String, String>{};
+    var index = 1;
+    for (var parameter in route.parameters) {
+      result[parameter] = Uri.decodeComponent(match[index++]);
+    }
+    return result;
   }
 }

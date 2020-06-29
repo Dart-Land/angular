@@ -9,21 +9,23 @@ import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 
 import 'analyzer.dart';
+import 'outliner/collect_type_parameters.dart';
 
-const _htmlImport = "import 'dart:html';";
-const _angularImport = "import 'package:angular/angular.dart';";
-const _appViewImport =
-    "import 'package:angular/src/core/linker/app_view.dart';";
-const _directiveChangeImport =
-    "import 'package:angular/src/core/change_detection/directive_change_detector.dart';";
+const _angularImports = '''
+import 'dart:html' as _html;
+import 'package:angular/angular.dart' as _ng;
+import 'package:angular/src/core/change_detection/directive_change_detector.dart' as _ng;
+import 'package:angular/src/core/linker/views/component_view.dart' as _ng;
+import 'package:angular/src/core/linker/views/render_view.dart' as _ng;
+import 'package:angular/src/core/linker/views/view.dart' as _ng;
+''';
 
 const _analyzerIgnores =
-    '// ignore_for_file: library_prefixes,unused_import,no_default_super_constructor_explicit,duplicate_import,unused_shown_name';
+    '// ignore_for_file: library_prefixes,unused_import,strict_raw_type,'
+    'no_default_super_constructor_explicit,undefined_hidden_name';
 
-String _typeParametersOf(ClassElement element) {
-  // TODO(b/111800117): generics with bounds aren't yet supported.
-  if (element.typeParameters.isEmpty ||
-      element.typeParameters.any((t) => t.bound != null)) {
+String _typeArgumentsFor(ClassElement element) {
+  if (element.typeParameters.isEmpty) {
     return '';
   }
   final buffer = StringBuffer('<')
@@ -39,12 +41,6 @@ String _typeParametersOf(ClassElement element) {
 /// off the critical path).
 class TemplateOutliner implements Builder {
   final String _extension;
-
-  String get _angularImports {
-    return '$_htmlImport\n$_angularImport\n$_directiveChangeImport\n$_appViewImport';
-  }
-
-  String get _appViewClass => 'AppView';
 
   final bool exportUserCodeFromTemplate;
 
@@ -109,19 +105,18 @@ class TemplateOutliner implements Builder {
         injectors.isNotEmpty) {
       output
         ..writeln('// Required for referencing runtime code.')
-        ..writeln(_angularImports)
-        ..writeln();
+        ..writeln(_angularImports);
       final userLandCode = p.basename(buildStep.inputId.path);
       output
         ..writeln('// Required for specifically referencing user code.')
-        ..writeln("import '$userLandCode' as _user;")
+        ..writeln("import '$userLandCode';")
         ..writeln();
     }
 
     // TODO(matanl): Add this as a helper function in angular_compiler.
     output.writeln('// Required for "type inference" (scoping).');
     for (final d in library.imports) {
-      if (d is ImportDirective && !d.isDeferred && d.uri != null) {
+      if (!d.isDeferred && d.uri != null) {
         var directive = "import '${d.uri}'";
         if (d.prefix != null) {
           directive += ' as ${d.prefix.name}';
@@ -137,7 +132,7 @@ class TemplateOutliner implements Builder {
                 if (c is HideElementCombinator) {
                   return c.hiddenNames;
                 }
-                return const [];
+                return const <Object>[];
               })
               .expand((i) => i)
               .join(', ');
@@ -146,24 +141,21 @@ class TemplateOutliner implements Builder {
       }
     }
     output.writeln();
+    final directiveTypeParameters = await collectTypeParameters(
+        components.followedBy(directives), buildStep);
     if (components.isNotEmpty) {
       for (final component in components) {
         final componentName = component.name;
-        // Note that until type parameter bounds are supported, there's no
-        // difference between a type parameter and its use as a type argument,
-        // so we reuse the type parameters for both.
-        final typeParameters = _typeParametersOf(component);
-        final componentType = '_user.$componentName$typeParameters';
-        final baseType = '$_appViewClass<$componentType>';
-        final viewArgs = '$_appViewClass<dynamic> parentView, int parentIndex';
+        final typeArguments = _typeArgumentsFor(component);
+        final typeParameters = directiveTypeParameters[component.name];
+        final componentType = '$componentName$typeArguments';
         final viewName = 'View${componentName}0';
         output.write('''
 // For @Component class $componentName.
 external List<dynamic> get styles\$$componentName;
-external ComponentFactory<_user.$componentName> get ${componentName}NgFactory;
-external $baseType viewFactory_${componentName}0$typeParameters($viewArgs);
-class $viewName$typeParameters extends $baseType {
-  external $viewName($viewArgs);
+external _ng.ComponentFactory<$componentName> get ${componentName}NgFactory;
+class $viewName$typeParameters extends _ng.ComponentView<$componentType> {
+  external $viewName(_ng.View parentView, int parentIndex);
 }
 ''');
       }
@@ -172,25 +164,24 @@ class $viewName$typeParameters extends $baseType {
       for (final directive in directives) {
         final directiveName = directive.name;
         final changeDetectorName = '${directiveName}NgCd';
-        // Note that until type parameter bounds are supported, there's no
-        // difference between a type parameter and its use as a type argument,
-        // so we reuse the type parameters for both.
-        final typeParameters = _typeParametersOf(directive);
-        final directiveType = '_user.$directiveName$typeParameters';
+        final typeArguments = _typeArgumentsFor(directive);
+        final typeParameters = directiveTypeParameters[directive.name];
+        final directiveType = '$directiveName$typeArguments';
         output.write('''
 // For @Directive class $directiveName.
-class $changeDetectorName$typeParameters extends DirectiveChangeDetector {
+class $changeDetectorName$typeParameters extends _ng.DirectiveChangeDetector {
   external $directiveType get instance;
   external void deliverChanges();
   external $changeDetectorName($directiveType instance);
-  external void detectHostChanges(AppView view, Element node);
+  external void detectHostChanges(_ng.RenderView view, _html.Element hostElement);
 }
 ''');
       }
     }
     if (injectors.isNotEmpty) {
       for (final injector in injectors) {
-        output.writeln('external Injector $injector([Injector parent]);');
+        output
+            .writeln('external _ng.Injector $injector([_ng.Injector parent]);');
       }
     }
     output..writeln()..writeln('external void initReflector();');

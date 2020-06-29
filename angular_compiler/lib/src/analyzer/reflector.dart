@@ -9,9 +9,6 @@ import 'package:source_gen/source_gen.dart';
 import 'di/dependencies.dart';
 import 'types.dart';
 
-typedef FutureOr<bool> _HasInput(String uri);
-typedef Future<bool> _IsLibrary(String uri);
-
 /// Determines how to generate and link to `initReflector` in other files.
 ///
 /// AngularDart's `initReflector` is used to create a graph of all generated
@@ -32,13 +29,13 @@ class ReflectableReader {
   /// Used to determine whether [uri] (i.e. `foo.dart`) _will_ generate a future
   /// output (i.e. `foo.template.dart`). It should be assumed the [uri]
   /// parameter, if a relative URI, is relative to the library being analyzed.
-  final _HasInput hasInput;
+  final FutureOr<bool> Function(String) hasInput;
 
   /// Returns whether [uri] represents a summarized/analyzed dart library.
   ///
   /// It should be assumed the [uri] parameter, if a relative URI, is relative
   /// to the library being analyzed.
-  final _IsLibrary isLibrary;
+  final Future<bool> Function(String) isLibrary;
 
   /// File extension used when compiling AngularDart files.
   ///
@@ -127,8 +124,8 @@ class ReflectableReader {
     DependencyInvocation<ConstructorElement> factory;
     if (_shouldRecordFactory(element) && recordInjectableFactories) {
       if (element.isPrivate) {
-        // TODO(matanl): Make this a better error message.
-        throw BuildError('Cannot access private class ${element.name}');
+        throw BuildError.throwForElement(
+            element, 'Private classes can not be @Injectable');
       }
       factory = dependencyReader.parseDependencies(element);
     }
@@ -205,7 +202,12 @@ class ReflectableReader {
       return false;
     }
     final outputUri = _withOutputExtension(uri);
-    return await isLibrary(outputUri) || await hasInput(uri);
+    try {
+      return await isLibrary(outputUri) || await hasInput(uri);
+    } catch (e) {
+      throw BuildError.forElement(
+          directive, 'Could not parse URI. Additional information:\n$e\n');
+    }
   }
 
   bool _shouldRecordFactory(ClassElement element) =>

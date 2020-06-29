@@ -12,15 +12,12 @@ import 'package:angular/experimental.dart';
 import '../bootstrap.dart';
 import '../errors.dart';
 import 'fixture.dart';
+import 'ng_zone/real_time_stabilizer.dart';
+import 'ng_zone/timer_hook_zone.dart';
 import 'stabilizer.dart';
 
 /// Used to determine if there is an actively executing test.
 NgTestFixture<Object> activeTest;
-
-/// Returns a new [List] merging iterables [a] and [b].
-List<E> _concat<E>(Iterable<E> a, Iterable<E> b) {
-  return a.toList()..addAll(b);
-}
 
 /// If any [NgTestFixture] is currently executing, calls `dispose` on it.
 ///
@@ -114,13 +111,18 @@ class NgTestBed<T> {
     return Injector.empty(parent);
   }
 
-  static final List<NgTestStabilizerFactory> _lifecycleStabilizers = [
-    (i) => NgZoneStabilizer(i.get(NgZone)),
-  ];
+  static NgTestStabilizer _alwaysStable(_) => NgTestStabilizer.alwaysStable;
+
+  static NgTestStabilizer _defaultStabilizers(
+    Injector injector, [
+    TimerHookZone timerZone,
+  ]) {
+    return RealTimeNgZoneStabilizer(timerZone, injector.provideType(NgZone));
+  }
 
   final Element _host;
   final List<Object> _providers;
-  final List<NgTestStabilizerFactory> _stabilizers;
+  final NgTestStabilizerFactory _createStabilizer;
 
   // Used only with .forComponent:
   final ComponentFactory<T> _componentFactory;
@@ -198,8 +200,8 @@ class NgTestBed<T> {
     return NgTestBed<T>._(
       host: host,
       // For uses of NgTestBed w/o `.forComponent`, we enable legacy APIs.
-      providers: const [SlowComponentLoader],
-      stabilizers: watchAngularLifecycle ? _lifecycleStabilizers : const [],
+      providers: const [SlowComponentLoader], // ignore: deprecated_member_use
+      stabilizer: watchAngularLifecycle ? _defaultStabilizers : _alwaysStable,
       rootInjector: rootInjector,
     );
   }
@@ -207,12 +209,12 @@ class NgTestBed<T> {
   NgTestBed._({
     Element host,
     Iterable<Object> providers,
-    Iterable<NgTestStabilizerFactory> stabilizers,
+    NgTestStabilizerFactory stabilizer,
     InjectorFactory rootInjector,
     ComponentFactory<T> component,
   })  : _host = host,
         _providers = providers.toList(),
-        _stabilizers = stabilizers.toList(),
+        _createStabilizer = stabilizer,
         _rootInjector = rootInjector ?? _defaultRootInjector,
         _componentFactory = component;
 
@@ -223,7 +225,8 @@ class NgTestBed<T> {
     @required bool watchAngularLifecycle,
   })  : _host = host,
         _providers = const [],
-        _stabilizers = watchAngularLifecycle ? _lifecycleStabilizers : const [],
+        _createStabilizer =
+            watchAngularLifecycle ? _defaultStabilizers : _alwaysStable,
         _rootInjector = rootInjector,
         _componentFactory = component;
 
@@ -235,7 +238,7 @@ class NgTestBed<T> {
     if (_usesComponentFactory) {
       throw UnsupportedError('Use "addInjector" instead');
     }
-    return fork(providers: _concat(_providers, providers));
+    return fork(providers: [..._providers, ...providers]);
   }
 
   /// Returns a new instance of [NgTestBed] with the root injector wrapped.
@@ -251,7 +254,9 @@ class NgTestBed<T> {
 
   /// Returns a new instance of [NgTestBed] with [stabilizers] added.
   NgTestBed<T> addStabilizers(Iterable<NgTestStabilizerFactory> stabilizers) {
-    return fork(stabilizers: _concat(_stabilizers, stabilizers));
+    return fork(
+      stabilizer: composeStabilizers([_createStabilizer, ...stabilizers]),
+    );
   }
 
   /// Creates a new test application with [T] as the root component.
@@ -272,6 +277,26 @@ class NgTestBed<T> {
     );
   }
 
+  static void _checkForActiveTest() {
+    if (activeTest != null) {
+      throw TestAlreadyRunningError();
+    }
+  }
+
+  /// Creates the root [InjectorFactory] for a test instance.
+  InjectorFactory _createRootInjectorFactory() {
+    var rootInjector = _rootInjector;
+    if (_providers.isNotEmpty) {
+      rootInjector = ([parent]) {
+        return ReflectiveInjector.resolveAndCreate(
+          _providers,
+          _rootInjector(parent),
+        );
+      };
+    }
+    return rootInjector;
+  }
+
   // Used for compatibility only. See `create` for public API.
   Future<NgTestFixture<T>> _createDynamic(
     Type type, {
@@ -281,35 +306,62 @@ class NgTestBed<T> {
     // We *purposefully* do not use async/await here - that always adds an
     // additional micro-task - we want this to fail fast without entering an
     // asynchronous event if another test is running.
-    void _checkForActiveTest() {
-      if (activeTest != null) {
-        throw TestAlreadyRunningError();
-      }
-    }
-
     _checkForActiveTest();
+
+    // Future.sync promotes synchronous errors to Future.error if they occur.
     return Future<NgTestFixture<T>>.sync(() {
+      // Ensure that no tests have started since the last microtask.
       _checkForActiveTest();
-      var rootInjector = _rootInjector;
-      if (_providers.isNotEmpty) {
-        rootInjector = ([parent]) {
-          return ReflectiveInjector.resolveAndCreate(
-              _providers, _rootInjector(parent));
-        };
+
+      // Create a zone to intercept timer creation.
+      final timerHookZone = TimerHookZone();
+      NgZone ngZoneInstance;
+      NgZone ngZoneFactory() {
+        return timerHookZone.run(() {
+          return ngZoneInstance = NgZone();
+        });
       }
+
+      // Created within "createStabilizersAndRunUserHook".
+      NgTestStabilizer allStabilizers;
+
+      Future<void> createStabilizersAndRunUserHook(Injector injector) async {
+        // Some internal stabilizers get access to the TimerHookZone.
+        // Most (i.e. user-land) stabilizers do not.
+        final createStabilizer = _createStabilizer;
+        allStabilizers = createStabilizer is AllowTimerHookZoneAccess
+            ? createStabilizer(injector, timerHookZone)
+            : createStabilizer(injector);
+
+        // If there is no user hook, we are done.
+        if (beforeComponentCreated == null) {
+          return null;
+        }
+
+        // If there is a user hook, execute it within the ngZone:
+        final completer = Completer<void>();
+        ngZoneInstance.runGuarded(() async {
+          try {
+            await beforeComponentCreated(injector);
+            completer.complete();
+          } catch (e, s) {
+            completer.completeError(e, s);
+          }
+        });
+        return completer.future.whenComplete(() => allStabilizers.update());
+      }
+
       return bootstrapForTest<T>(
         _componentFactory ?? typeToFactory(type),
         _host ?? _defaultHost(),
-        rootInjector,
-        beforeComponentCreated: beforeComponentCreated,
+        _createRootInjectorFactory(),
+        beforeComponentCreated: createStabilizersAndRunUserHook,
         beforeChangeDetection: beforeChangeDetection,
+        createNgZone: ngZoneFactory,
       ).then((componentRef) async {
         _checkForActiveTest();
-        final allStabilizers = NgTestStabilizer.all(
-          _stabilizers.map((s) => s(componentRef.injector)),
-        );
         await allStabilizers.stabilize();
-        final testFixture = NgTestFixture<T>(
+        final testFixture = NgTestFixture(
           componentRef.injector.get(ApplicationRef),
           componentRef,
           allStabilizers,
@@ -329,12 +381,12 @@ class NgTestBed<T> {
     ComponentFactory<E> component,
     Iterable<Object> providers,
     InjectorFactory rootInjector,
-    Iterable<NgTestStabilizerFactory> stabilizers,
+    NgTestStabilizerFactory stabilizer,
   }) {
     return NgTestBed<E>._(
       host: host ?? _host,
       providers: providers ?? _providers,
-      stabilizers: stabilizers ?? _stabilizers,
+      stabilizer: stabilizer ?? _createStabilizer,
       rootInjector: rootInjector ?? _rootInjector,
       component: component ?? _componentFactory,
     );

@@ -1,3 +1,81 @@
+### New Features
+
+*   `NgTestFixture.dispose()` now resets and clears all component styles from
+    the DOM when assertions are enabled.
+
+## 2.4.0
+
+### New Features
+
+*   Added an optional named parameter, `maxIterations`, to
+    `FakeTimeNgZoneStabilizer`'s constructor. If not specified 10 maximum loops
+    are attempted to `elapse` pending timers. In advanced use cases, a test may
+    configure a higher threshold:
+
+    ```dart
+    NgZoneStabilizer allow100InsteadOf10() {
+      return FakeTimeNgZoneStabilizer(timerZone, ngZone, maxIterations: 100);
+    }
+    ```
+
+### Bug Fixes
+
+*   `NgTestFixture.update()` now delegates to `ComponentRef.update()`, which
+    automatically calls `markForCheck()`. Previously, an `OnPush` component
+    under test might not have been properly updated.
+
+## 2.3.1
+
+*   Maintenance release to support Angular 6.0-alpha.
+
+## 2.3.0
+
+### New Features
+
+*   Added support for periodic timers in `FakeTimeNgZoneStabilizer`.
+
+## 2.2.0
+
+### Breaking Changes
+
+*   Changed `NgTestStabilizer` initialization from originating from a
+    `List<NgTestStabilizerFactory>` to a single `NgTestStabilizerFactory`. The
+    new top-level function `composeStabilizers` may be used to create a
+    composite factory from multiple factories:
+
+    ```dart
+    composeStabilizers([
+      (_) => stabilizer1,
+      (_) => stabilizer2,
+    ])
+    ```
+
+    This helps disambiguate the order of stabilizers running, which in turn will
+    allow additional new stabilizers and features to be added in a non-breaking
+    fashion. This change does not impact users that were not augmenting or
+    creating their own stabilizers (i.e. most users/most tests).
+
+*   Removed `NgTestStabilizer.all`. See `composeStabilizers` instead.
+
+*   Removed `NgZoneStabilizer`. The new class is `RealTimeNgZoneStabilizer`,
+    though most users should not be impacted `NgTestBed` now uses the new
+    stabilizer by default.
+
+### New Features
+
+*   Added a new `NgTestStabilizer.alwaysStable`, which does what it sounds like
+    and always reports stability. This handles making composition easier as the
+    root stabilizer can effectively be a no-op.
+
+### Bug Fixes
+
+*   When using `RealTimeNgZoneStabilizer`, do not try to stabilize timers that
+    run outside of Angular zone.
+
+## 2.1.0
+
+### New Features
+
 *   Supported `beforeComponentCreated(Injector)` when creating fixture to allow
     using `injector` to set up prerequisite data for testing from DI.
 

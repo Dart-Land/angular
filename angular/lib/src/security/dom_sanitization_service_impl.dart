@@ -1,7 +1,6 @@
 import 'package:angular/src/runtime.dart';
 
 import '../core/di.dart' show Injectable;
-import '../core/security.dart';
 import 'dom_sanitization_service.dart';
 import 'html_sanitizer.dart';
 import 'style_sanitizer.dart';
@@ -9,26 +8,25 @@ import 'url_sanitizer.dart';
 
 @Injectable()
 class DomSanitizationServiceImpl implements DomSanitizationService {
-  static DomSanitizationServiceImpl _instance;
+  static const _instance = DomSanitizationServiceImpl._();
 
   // Force a global static singleton across DDC instances for this service. In
   // angular currently it is already a single instance across all instances for
   // performance reasons. This allows a check to occur that this is really the
   // same sanitizer is used.
-  factory DomSanitizationServiceImpl() {
-    _instance ??= new DomSanitizationServiceImpl._();
-    return _instance;
-  }
+  factory DomSanitizationServiceImpl() => _instance;
 
-  DomSanitizationServiceImpl._();
+  // Const to enforce statelessness.
+  const DomSanitizationServiceImpl._();
 
   @override
   String sanitizeHtml(value) {
     if (value == null) return null;
     if (value is SafeHtmlImpl) return value.changingThisWillBypassSecurityTrust;
-    if (value is SafeValue)
+    if (value is SafeValue) {
       throw UnsupportedError(
           'Unexpected SecurityContext $value, expecting html');
+    }
     return sanitizeHtmlInternal(unsafeCast(value));
   }
 
@@ -38,9 +36,10 @@ class DomSanitizationServiceImpl implements DomSanitizationService {
     if (value is SafeStyleImpl) {
       return value.changingThisWillBypassSecurityTrust;
     }
-    if (value is SafeValue)
+    if (value is SafeValue) {
       throw UnsupportedError('Unexpected SecurityContext $value, '
           'expecting style');
+    }
     if (value == null) return null;
     return internalSanitizeStyle(value is String ? value : value.toString());
   }
@@ -49,9 +48,10 @@ class DomSanitizationServiceImpl implements DomSanitizationService {
   String sanitizeUrl(value) {
     if (value == null) return null;
     if (value is SafeUrlImpl) return value.changingThisWillBypassSecurityTrust;
-    if (value is SafeValue)
+    if (value is SafeValue) {
       throw UnsupportedError('Unexpected SecurityContext $value, '
           'expecting url');
+    }
     return internalSanitizeUrl(value.toString());
   }
 
@@ -61,9 +61,10 @@ class DomSanitizationServiceImpl implements DomSanitizationService {
     if (value is SafeResourceUrlImpl) {
       return value.changingThisWillBypassSecurityTrust;
     }
-    if (value is SafeValue)
+    if (value is SafeValue) {
       throw UnsupportedError('Unexpected SecurityContext $value, '
           'expecting resource url');
+    }
     throw UnsupportedError(
         'Security violation in resource url. Create SafeValue');
   }
@@ -89,36 +90,21 @@ abstract class SafeValueImpl implements SafeValue {
   final String changingThisWillBypassSecurityTrust;
   SafeValueImpl(this.changingThisWillBypassSecurityTrust);
 
-  String getTypeName();
   String toString() => changingThisWillBypassSecurityTrust;
 }
 
 class SafeHtmlImpl extends SafeValueImpl implements SafeHtml {
   SafeHtmlImpl(String value) : super(value);
-  @override
-  String getTypeName() {
-    return 'HTML';
-  }
 }
 
 class SafeStyleImpl extends SafeValueImpl implements SafeStyle {
   SafeStyleImpl(String value) : super(value);
-  @override
-  String getTypeName() {
-    return 'Style';
-  }
 }
 
 class SafeUrlImpl extends SafeValueImpl implements SafeUrl {
   SafeUrlImpl(String value) : super(value);
-  String getTypeName() {
-    return 'URL';
-  }
 }
 
 class SafeResourceUrlImpl extends SafeValueImpl implements SafeResourceUrl {
   SafeResourceUrlImpl(String value) : super(value);
-  String getTypeName() {
-    return 'ResourceURL';
-  }
 }

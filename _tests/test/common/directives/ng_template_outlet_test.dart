@@ -31,6 +31,7 @@ void main() {
       });
       expect(element, hasTextContent("foo"));
     });
+
     test("should clear content if TemplateRef becomes null", () async {
       var testBed = NgTestBed<TestClearContentComponent>();
       var testFixture = await testBed.create();
@@ -82,16 +83,6 @@ void main() {
         component.context = {
           '\$implicit': 'bar',
         };
-      });
-      expect(testFixture.text, contains('bar'));
-    });
-
-    test('should update when map proxy changes', () async {
-      final testBed = NgTestBed<TestContextProxyChangeComponent>();
-      final testFixture = await testBed.create();
-      expect(testFixture.text, contains('foo'));
-      await testFixture.update((component) {
-        component.contextValue = 'bar';
       });
       expect(testFixture.text, contains('bar'));
     });
@@ -202,33 +193,20 @@ class TestContextChangeComponent {
 }
 
 @Component(
-  selector: 'test-context-proxy-change',
-  template: '''
-    <template #template let-text>{{text}}</template>
-    <template
-        [ngTemplateOutlet]="template"
-        [ngTemplateOutletContext]="{'\$implicit': contextValue}">
-    </template>
-  ''',
-  directives: [NgTemplateOutlet],
-)
-class TestContextProxyChangeComponent {
-  String contextValue = 'foo';
-}
-
-@Component(
   selector: 'test-context-template-ref-change',
   template: '''
     <template #greet let-text>Hello {{text}}!</template>
     <template #farewell let-text>Goodbye {{text}}!</template>
     <template
         [ngTemplateOutlet]="isGreeting ? greet : farewell"
-        [ngTemplateOutletContext]="{'\$implicit': 'world'}">
+        [ngTemplateOutletContext]="context">
     </template>
   ''',
   directives: [NgTemplateOutlet],
 )
 class TestContextTemplateRefChangeComponent {
+  static const context = {r'$implicit': 'world'};
+
   bool isGreeting = true;
 }
 

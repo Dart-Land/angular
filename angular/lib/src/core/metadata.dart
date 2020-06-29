@@ -13,7 +13,6 @@ export 'metadata/lifecycle_hooks.dart'
         AfterContentChecked,
         AfterViewInit,
         AfterViewChecked,
-        OnChanges,
         OnDestroy,
         OnInit,
         DoCheck;
@@ -26,12 +25,14 @@ export 'metadata/visibility.dart';
 ///
 /// <?code-excerpt "docs/attribute-directives/lib/src/highlight_directive_1.dart"?>
 /// ```dart
+/// import 'dart:html';
+///
 /// import 'package:angular/angular.dart';
 ///
 /// @Directive(selector: '[myHighlight]')
 /// class HighlightDirective {
-///   HighlightDirective(ElementRef el) {
-///     el.nativeElement.style.backgroundColor = 'yellow';
+///   HighlightDirective(Element el) {
+///     el.style.backgroundColor = 'yellow';
 ///   }
 /// }
 /// ```
@@ -238,7 +239,7 @@ class Component extends Directive {
   ///
   /// See [Typed] for details.
   @experimental
-  final List<Typed> directiveTypes;
+  final List<Typed<Object>> directiveTypes;
 
   final List<Object> pipes;
   final ViewEncapsulation encapsulation;
@@ -246,7 +247,7 @@ class Component extends Directive {
   const Component({
     String selector,
     String exportAs,
-    List providers,
+    List<Object> providers,
     Visibility visibility = Visibility.local,
     this.viewProviders,
     this.exports,
@@ -260,7 +261,8 @@ class Component extends Directive {
     this.directiveTypes,
     this.pipes,
     this.encapsulation,
-  }) : super(
+  })  : assert(changeDetection != null),
+        super(
           selector: selector,
           exportAs: exportAs,
           providers: providers,
@@ -554,6 +556,7 @@ abstract class _ViewQuery extends _Query {
 ///     }
 ///   }
 /// }
+/// ```
 ///
 /// Reading an HTML element using `read`:
 ///

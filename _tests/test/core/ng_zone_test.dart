@@ -19,7 +19,8 @@ void main() {
     List<StreamSubscription> subs;
 
     void createNgZone({@required bool enableLongStackTrace}) {
-      zone = NgZone(enableLongStackTrace: enableLongStackTrace);
+      ExceptionHandler.debugAsyncStackTraces(enableLongStackTrace);
+      zone = NgZone();
       subs = <StreamSubscription>[
         zone.onError.listen((e) {
           errors.add(e.error);
@@ -247,18 +248,63 @@ void main() {
         ]);
         final fullStackTrace = traces.map((t) => t.toString()).join('');
         expect(fullStackTrace, contains('bar'));
-
-        // Skip this part of the test in DDC, we seem to be only getting:
-        // a short stack trace (perhaps pkg/stack_trace doesn't work the same
-        // inside this test environment).
-        //
-        // Internal bug: b/38171558.
-        if (!fullStackTrace.contains('ng_zone_test_library.js')) {
-          expect(fullStackTrace, contains('foo'));
-        }
+        expect(fullStackTrace, contains('foo'));
       }, onPlatform: {
         'firefox': Skip('Strack trace appears differently'),
       });
+    });
+
+    test('should support "runAfterChangesObserved"', () async {
+      createNgZone(enableLongStackTrace: true);
+      var counter = 0;
+      return zone.run(() {
+        counter++;
+        scheduleMicrotask(() {
+          counter++;
+        });
+        zone.runAfterChangesObserved(expectAsync0(() {
+          expect(counter, 2);
+        }));
+      });
+    });
+
+    test('should support "runAfterChangesObserved" in onTurnDone', () async {
+      createNgZone(enableLongStackTrace: true);
+      var onTurnDoneTriggered = 0;
+      var sub = zone.onTurnDone.listen((_) {
+        onTurnDoneTriggered++;
+        if (onTurnDoneTriggered == 0) {
+          zone.runAfterChangesObserved(() {
+            zone.run(() {});
+          });
+        }
+      });
+      zone.run(() {});
+      await Future(() {});
+      expect(onTurnDoneTriggered, 1);
+      await sub.cancel();
+    });
+
+    test('should execute "runAfterChangesObserved" callback in this zone',
+        () async {
+      createNgZone(enableLongStackTrace: true);
+      var onMicrotaskEmptyTriggered = 0;
+      var counter = 0;
+      var sub = zone.onMicrotaskEmpty.listen((_) {
+        onMicrotaskEmptyTriggered++;
+      });
+      final completer = Completer<void>();
+      zone.run(() {
+        zone.runAfterChangesObserved(() {
+          expect(onMicrotaskEmptyTriggered, 1);
+          counter++;
+          completer.complete();
+        });
+      });
+      await completer.future;
+      expect(counter, 1);
+      expect(onMicrotaskEmptyTriggered, 2); // onMicrotaskEmpty ran again.
+      await sub.cancel();
     });
   });
 }

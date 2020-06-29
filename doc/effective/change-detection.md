@@ -1,36 +1,10 @@
-# Effective AngularDart: Change Detection
+# Change Detection
 
-
-> **NOTE**: This is a work-in-progress, and not yet final. Some of the links may
-> be substituted with `(...)`, and some TODOs or missing parts may be in the
-> documentation.
 
 Change detection is the performance bottleneck in most Angular apps. A component
 with problematic change detection bindings can cause the entire app to slow to a
 crawl. This best practices document will show you how to write components and
 templates that maximize the performance of your app.
-
-*   [Templates](#templates)
-    *   [AVOID expensive bindings](#avoid-expensive-bindings)
-    *   [DO use final fields where
-        possible](#do-use-final-fields-where-possible)
-    *   [DO use `exports` for static
-        bindings](#do-use-exports-for-static-bindings)
-    *   [PREFER 0- or 1-argument event
-        handlers](#prefer-0--or-1-argument-event-handlers)
-*   [Components](#components)
-    *   [AVOID order-dependent input
-        setters](#avoid-order-dependent-input-setters)
-    *   [AVOID any asynchronous actions in
-        `ngDoCheck`](#avoid-any-asynchronous-actions-in-ngdocheck)
-    *   [PREFER `ngAfterChanges` to
-        `ngOnChanges`](#prefer-implementing-afterchanges-to-onchanges)
-    *   [PREFER setters to
-        `ngAfterXChecked`](#prefer-setters-to-ngafterxchecked)
-    *   [PREFER `bool` setters to using
-        `getBool`](#prefer-bool-setters-to-using-getbool)
-    *   [PREFER using `OnPush` where
-        possible](#prefer-using-onpush-where-possible)
 
 ## Templates
 
@@ -42,7 +16,7 @@ expensive computations in your template bindings is always a bad idea.
 
 **BAD**:
 
-```html
+```html {.bad}
 <child-component [input]="myExpensiveMethod()"></child-component>
 ```
 
@@ -52,7 +26,7 @@ on your app.
 
 **GOOD**:
 
-```html
+```html {.good}
 <child-component [input]="myField"></child-component>
 ```
 
@@ -64,7 +38,7 @@ altogether in this case.
 
 **BAD**:
 
-```dart
+```dart {.bad}
 @Component(
   selector: 'my-component',
   template: '<h1>{{message}}</h1>',
@@ -81,7 +55,7 @@ optimize.
 
 **GOOD**:
 
-```dart
+```dart {.good}
 @Component(
   selector: 'my-component',
   template: '<h1>{{message}}</h1>',
@@ -99,7 +73,7 @@ on your component class that referenced the static data.
 
 **BAD**:
 
-```dart
+```dart {.bad}
 const String hello = 'Hello, World!';
 
 @Component(
@@ -118,7 +92,7 @@ compiler since it knows that every `export` is immutable.
 
 **GOOD**:
 
-```dart
+```dart {.good}
 const String hello = 'Hello, World!';
 
 @Component(
@@ -137,7 +111,7 @@ their one argument is the special `$event` argument.
 
 **BAD**:
 
-```dart
+```dart {.bad}
 @Component(
   selector: 'my-component',
   template: '<div (click)="handleClick(false)"'
@@ -154,7 +128,7 @@ generate better code for your component.
 
 **GOOD**:
 
-```dart
+```dart {.good}
 @Component(
   selector: 'my-component',
   template: '<div (click)="handleSingleClick()"'
@@ -166,6 +140,119 @@ class MyComponent {
   void handleDoubleClick() => _handleClick(true);
 }
 ```
+
+### AVOID using getters to generate function objects for the template
+
+This is bad for performance, as Angular calls the getter during change detection
+, which creates a new function object giving Angular illusion that the field has
+been changed. In fact, this will become a runtime error in dev mode soon.
+
+**BAD**
+
+```dart
+@Component(
+  selector: 'foo',
+  template: '<bar [foo]="fooName"></bar>',
+)
+class Foo {
+  ItemRenderer get fooName => (foo) => foo.name;
+}
+```
+
+**GOOD**
+
+```dart
+@Component(
+  selector: 'foo',
+  template: '<bar [foo]="fooName"></bar>'
+)
+class Foo {
+  static final String fooName(foo) => foo.name;
+}
+```
+
+### PREFER using the template to update children
+
+Whenever possible, update children through the template. This allows Angular to
+track changes to components and update them accordingly.
+
+**BAD**
+
+```dart
+@Component(
+  selector: 'expansion-panel',
+  template: '''
+    <ng-container *ngIf="isExpanded">
+      <ng-content></ng-content>
+    </ng-container>
+  ''',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+)
+class ExpansionPanelComponent {
+  @Input()
+  var isExpanded = false;
+}
+
+@Component(
+  selector: 'parent',
+  template: '''
+    <expansion-panel>
+      <div>Hello!</div>
+    </expansion-panel>
+  ''',
+  directives: [ExpansionPanelComponent],
+)
+class ExampleComponent {
+  @ViewChild(ExpansionPanelComponent)
+  ExpansionPanelComponent expansionPanel;
+
+  void expand() {
+    expansionPanel.isExpanded = true;
+  }
+}
+```
+
+This example doesn't even work, because Angular can't see the change to
+`isExpanded` and thus won't update `ExpansionPanelComponent` which uses
+`ChangeDetectionStrategy.OnPush`.
+
+**GOOD**
+
+```dart
+@Component(
+  selector: 'expansion-panel',
+  template: '''
+    <ng-container *ngIf="isExpanded">
+      <ng-content></ng-content>
+    </ng-container>
+  ''',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+)
+class ExpansionPanelComponent {
+  @Input()
+  var isExpanded = false;
+}
+
+@Component(
+  selector: 'parent',
+  template: '''
+    <expansion-panel [isExpanded]="isExpanded">
+      <div>Hello!</div>
+    </expansion-panel>
+  ''',
+  directives: [ExpansionPanelComponent],
+)
+class ExampleComponent {
+  var isExpanded = false;
+
+  void expand() {
+    isExpanded = true;
+  }
+}
+```
+
+Angular can now observe the change to `isExpanded` and will update
+`ExpansionPanelComponent` accordingly.
 
 ## Components
 
@@ -180,7 +267,7 @@ component can be set in **any order**.
 
 **BAD**:
 
-```dart
+```dart {.bad}
 @Component(
   selector: 'my-component',
 )
@@ -202,7 +289,7 @@ bug.
 
 **GOOD**:
 
-```dart
+```dart {.good}
 @Component(
   selector: 'my-component',
 )
@@ -242,7 +329,7 @@ them. Adding asynchronous events (including implicitly, by making the method
 
 **BAD**:
 
-```dart
+```dart {.bad}
 @Component()
 class MyComponent implements DoCheck {
   @override
@@ -254,7 +341,7 @@ class MyComponent implements DoCheck {
 
 **BAD**:
 
-```dart
+```dart {.bad}
 @Component()
 class MyComponent implements DoCheck {
   @override
@@ -271,7 +358,7 @@ To be safe, strictly make synchronous side-effect free checks in `ngDoCheck`:
 
 **GOOD**:
 
-```dart
+```dart {.good}
 @Component()
 class MyComponent implements DoCheck {
   @Input()
@@ -290,7 +377,7 @@ You can always use the `AfterChanges` event to process changes/do async things:
 
 **GOOD**:
 
-```dart
+```dart {.good}
 @Component()
 class MyComponent implements AfterChanges {
   @Input()
@@ -319,7 +406,7 @@ should use the much cheaper `AfterChanges` class.
 
 **BAD**:
 
-```dart
+```dart {.bad}
 @Component(
   selector: 'my-component',
 )
@@ -336,7 +423,7 @@ use `AfterChanges`.
 
 **GOOD**:
 
-```dart
+```dart {.good}
 @Component(
   selector: 'my-component',
 )
@@ -363,7 +450,7 @@ invoked, regardless if the queries have _actually_ changed.
 
 **BAD**:
 
-```dart
+```dart {.bad}
 class MyComponent implements AfterViewChecked {
   @ViewChildren(ChildDirective)
   List<ChildDirective> children;
@@ -379,7 +466,7 @@ class MyComponent implements AfterViewChecked {
 
 **GOOD**:
 
-```dart
+```dart {.good}
 class MyComponent {
   @ViewChildren(ChildDirective)
   set children(List<ChildDirective> children) {
@@ -413,17 +500,19 @@ dynamic.
 
 **BAD**:
 
-```dart
+```dart {.bad}
 bool getBool(dynamic x) {
   if (x == '') return true;
   if (x is bool) return x;
   throw 'not a bool or empty string!';
 }
+
 @Component(
   selector: 'my-component',
 )
 class MyComponent {
   bool _useCoolFlag = false;
+
   @Input()
   set useCoolFlag(x) {
     _useCoolFlag = getBool(x);
@@ -437,7 +526,7 @@ given in the template.
 
 **GOOD**:
 
-```dart
+```dart {.good}
 @Component(
   selector: 'my-component',
 )
@@ -450,36 +539,42 @@ class MyComponent {
 ### PREFER using `OnPush` where possible
 
 In many cases, components only need change detection run on them if one of their
-inputs has changed. Angular supports this use case with
-`ChangeDetectionStrategy.OnPush`. There are some considerations to make before
-just switching to `OnPush`, however. You cannot use `OnPush` on the root
-component of your app. Also, if your component may change due to something other
-than a changing input - for instance, an event handler changing your component's
-state - then you either shouldn't use `OnPush` or implement change detection
-manually (see below for an example).
+inputs has changed or event handlers has been triggered. Angular supports this
+use case with `ChangeDetectionStrategy.OnPush`. There are some considerations to
+make before just switching to `OnPush`, however.
 
 **GOOD**:
 
-```dart
+```dart {.good}
 @Component(
   selector: 'my-component',
-  template: '<div>{{message}}</div>',
+  template: '''
+    <div>{{message}}</div>
+    <button (click)="flipGreeting()">Click me!</button>
+  ''',
   changeDetection: ChangeDetectionStrategy.OnPush,
 )
 class MyComponent {
   @Input()
-  String message = 'Hello, World!';
+  var name = 'world';
+  var _isArriving = true;
+
+  String get message => _isArriving ? 'Hello, $name!' : 'Goodbye, $name!';
+
+  void flipGreeting() {
+    _isArriving = !_isArriving;
+  }
 }
 ```
 
-The above component only needs to run change detection when the `message`
-changes, so it's a perfect candidate for using `OnPush`. It won't waste cycles
-running change detection when it knows the message field hasn't changed. But
-what if an event handler could change the component? In that case, you can
-inject a `ChangeDetectorRef` and call `markForCheck()` to manually mark the
-component to be checked in the next change detection cycle. If you opt for this
-approach, you must make sure that `markForCheck()` is called inside the
-Angular zone.
+The above component only needs to run change detection when the `name` changes
+or the button is clicked, so it's a perfect candidate for using `OnPush`. It
+won't waste cycles running change detection when it knows the name field hasn't
+changed or the button hasn't been clicked.
+
+But what if an injected service or subscription could change the component? In
+that case, you can inject a `ChangeDetectorRef` and call `markForCheck()` to
+manually mark the component to be checked in the next change detection cycle.
 
 **IMPORTANT NOTE**: It is a misconception that one should use
 `ChangeDetectorRef#detectChanges()` to do manual change detection. Please note
@@ -488,22 +583,91 @@ way is to call `markForCheck()`.
 
 **GOOD**:
 
-```dart
+```dart {.good}
 @Component(
   selector: 'my-component',
-  template: '<div>{{message}}</div><div (click)="flipGreeting()">Click Me!</div>',
+  template: '<div>{{message}}</div',
   changeDetection: ChangeDetectionStrategy.OnPush,
 )
-class MyComponent {
-  bool greeting = true;
-  String get message => greeting ? 'Hello' : 'Goodbye';
+class MyComponent implements OnInit {
+  MyComponent(this._changeDetectorRef, this._service);
 
-  final ChangeDetectorRef _cdRef;
-  MyComponent(this._cdRef);
+  final ChangeDetectorRef _changeDetectorRef;
+  final MyService _service;
 
-  void flipGreeting() {
-    greeting = !greeting;
-    _cdRef.markForCheck();
+  String _message = '';
+  String get message => _message;
+
+  @override
+  void ngOnInit() {
+    _service.fetchMessage().then((value) {
+      _message = value;
+      _changeDetectorRef.markForCheck();
+    });
   }
 }
 ```
+
+To learn more, see the [OnPush change detection][on-push-docs] guide.
+
+### Prefer `NgZone.runAfterChangesObserved` to timers or microtasks
+
+It is sometimes seemingly necessary to _wait_ an arbtitrary amount of time for
+change detection to be executed before executing other dependent code. **This is
+sometimes a sign of another bug or design flaw** in an app model.
+
+To make it more clear the code you are using might have any issue, and the
+microtasks and/or timers are not an explicit part of your design, use the method
+`runAfterChangesObserved` by injecting `NgZone`.
+
+**BAD**: Using `scheduleMicrotask`.
+
+```dart {.bad}
+class MyComponent {
+  var someField = false;
+  void someFunction() {
+    someField = true;
+    scheduleMicrotask(() {
+      // Observe some side-effect of "someField" being true.
+    });
+  }
+}
+```
+
+**BAD**: Using `Timer.run` (or any other `Timer` or `Future` method).
+
+```dart {.bad}
+class MyComponent {
+  var someField = false;
+  void someFunction() {
+    someField = true;
+    Timer.run(() {
+      // Observe some side-effect of "someField" being true.
+    });
+  }
+}
+```
+
+**GOOD**: Using `NgZone#runAfterChangesObserved`.
+
+```dart {.good}
+class MyComponent {
+  final NgZone _ngZone;
+  MyComponent(this._ngZone);
+  var someField = false;
+  void someFunction() {
+    someField = true;
+    // TODO(...bug...): This should not be necessary.
+    _ngZone.runAfterChangesObserved(() {
+      // Observe some side-effect of "someField" being true.
+    });
+  }
+}
+```
+
+As an added bonus, the AngularDart team and other knowledgeable folks will be
+much better prepared to help diagnose bugs or issues when they see this method
+being used than arbitrary timing.
+
+[on-push-docs]: https://github.com/dart-lang/angular/blob/master/doc/advanced/on-push.md
+

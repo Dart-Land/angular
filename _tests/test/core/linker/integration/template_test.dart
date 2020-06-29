@@ -39,7 +39,7 @@ void main() {
     final testFixture = await testBed.create();
     final childNodes = testFixture.rootElement.childNodes;
     expect(childNodes, hasLength(1));
-    expect(childNodes.first, isInstanceOf<Comment>());
+    expect(childNodes.first, TypeMatcher<Comment>());
   });
 
   test('should transplant TemplateRef into another ViewContainer', () async {
@@ -148,9 +148,7 @@ class SomeDirective {}
 class CompWithHost {
   SomeDirective myHost;
 
-  CompWithHost(@Host() SomeDirective someComp) {
-    this.myHost = someComp;
-  }
+  CompWithHost(@Host() this.myHost);
 }
 
 @Component(

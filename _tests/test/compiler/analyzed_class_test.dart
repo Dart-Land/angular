@@ -20,7 +20,7 @@ void main() {
         }''');
       final expression = MethodCall(ImplicitReceiver(), 'getNames', []);
       final type = getExpressionType(expression, analyzedClass);
-      expect(type.toString(), 'List<String>');
+      expect(typeToCode(type), 'List<String>');
     });
 
     test('should resolve return type of method with explicit receiver',
@@ -35,7 +35,7 @@ void main() {
         LiteralPrimitive(4),
       ]);
       final type = getExpressionType(rangeExpr, analyzedClass);
-      expect(type.toString(), 'Iterable<String>');
+      expect(typeToCode(type), 'Iterable<String>');
     });
 
     test('should resolve property type with implicit receiver', () async {
@@ -45,7 +45,7 @@ void main() {
         }''');
       final expression = PropertyRead(ImplicitReceiver(), 'values');
       final type = getExpressionType(expression, analyzedClass);
-      expect(type.toString(), 'List<int>');
+      expect(typeToCode(type), 'List<int>');
     });
 
     test('should resolve property type with explicit receiver', () async {
@@ -56,7 +56,42 @@ void main() {
       final valuesExpr = PropertyRead(ImplicitReceiver(), 'values');
       final lengthExpr = PropertyRead(valuesExpr, 'length');
       final type = getExpressionType(lengthExpr, analyzedClass);
-      expect(type.toString(), 'int');
+      expect(typeToCode(type), 'int');
+    });
+  });
+
+  group("isImmutable", () {
+    test('should support PropertyReads', () async {
+      final analyzedClass = await analyzeClass('''
+        class AppComponent {
+          final int seven = 7;
+          int someNumber;
+        }
+      ''');
+      final sevenExpr = PropertyRead(ImplicitReceiver(), 'seven');
+      final someNumberExpr = PropertyRead(ImplicitReceiver(), 'someNumber');
+      expect(isImmutable(sevenExpr, analyzedClass), true);
+      expect(isImmutable(someNumberExpr, analyzedClass), false);
+    });
+
+    test('should support PropertyReads from ancestors', () async {
+      final library = await resolve('''
+        class AppComponent {
+          final int seven = 7;
+          int someNumber;
+        }
+
+        class SubComponent extends AppComponent {
+          final int eight = 8;
+        }
+      ''');
+      var analyzedClass = AnalyzedClass(library.getType('SubComponent'));
+      final sevenExpr = PropertyRead(ImplicitReceiver(), 'seven');
+      final eightExpr = PropertyRead(ImplicitReceiver(), 'eight');
+      final someNumberExpr = PropertyRead(ImplicitReceiver(), 'someNumber');
+      expect(isImmutable(eightExpr, analyzedClass), true);
+      expect(isImmutable(sevenExpr, analyzedClass), true);
+      expect(isImmutable(someNumberExpr, analyzedClass), false);
     });
   });
 }

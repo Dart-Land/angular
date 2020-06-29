@@ -1,15 +1,14 @@
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/type.dart';
-import 'package:source_gen/src/type_checker.dart';
+import 'package:analyzer/src/generated/resolver.dart';
 
 import 'expression_parser/ast.dart' as ast;
-
-final _stringTypeChecker = TypeChecker.fromRuntime(String);
 
 /// A wrapper around [ClassElement] which exposes the functionality
 /// needed for the view compiler to find types for expressions.
 class AnalyzedClass {
   final ClassElement _classElement;
+  final Map<String, DartType> locals;
 
   /// Whether this class has mock-like behavior.
   ///
@@ -18,17 +17,28 @@ class AnalyzedClass {
   /// [noSuchMethod].
   final bool isMockLike;
 
+  // The type provider associated with this class.
+  TypeProvider get _typeProvider => _classElement.context.typeProvider;
+
   AnalyzedClass(
     this._classElement, {
     this.isMockLike = false,
+    this.locals = const {},
   });
+
+  AnalyzedClass.from(AnalyzedClass other,
+      {Map<String, DartType> additionalLocals = const {}})
+      : this._classElement = other._classElement,
+        this.isMockLike = other.isMockLike,
+        this.locals = {}..addAll(other.locals)..addAll(additionalLocals);
 }
 
 /// Returns the [expression] type evaluated within context of [analyzedClass].
 ///
 /// Returns dynamic if [expression] can't be resolved.
 DartType getExpressionType(ast.AST expression, AnalyzedClass analyzedClass) {
-  final typeResolver = _TypeResolver(analyzedClass._classElement);
+  final typeResolver =
+      _TypeResolver(analyzedClass._classElement, analyzedClass.locals);
   return expression.visit(typeResolver);
 }
 
@@ -39,12 +49,55 @@ DartType getIterableElementType(DartType dartType) => dartType is InterfaceType
     ? dartType.lookUpInheritedGetter('single')?.returnType
     : null;
 
+/// Returns an int type using the [analyzedClass]'s context.
+DartType intType(AnalyzedClass analyzedClass) =>
+    analyzedClass._typeProvider.intType;
+
+/// Returns an bool type using the [analyzedClass]'s context.
+DartType boolType(AnalyzedClass analyzedClass) =>
+    analyzedClass._typeProvider.boolType;
+
+/// Returns whether the type [expression] is [String].
+bool isString(ast.AST expression, AnalyzedClass analyzedClass) {
+  final type = getExpressionType(expression, analyzedClass);
+  return type.isDartCoreString;
+}
+
+String typeToCode(DartType type) {
+  if (type == null) {
+    return null;
+  } else if (type.isDynamic) {
+    return 'dynamic';
+  } else if (type is InterfaceType) {
+    var typeArguments = type.typeArguments;
+    if (typeArguments.isEmpty) {
+      return type.element.name;
+    } else {
+      final typeArgumentsStr = typeArguments.map(typeToCode).join(', ');
+      return '${type.element.name}<$typeArgumentsStr>';
+    }
+  } else if (type is TypeParameterType) {
+    return type.element.name;
+  } else if (type.isVoid) {
+    return 'void';
+  } else {
+    throw UnimplementedError('(${type.runtimeType}) $type');
+  }
+}
+
+PropertyInducingElement _getField(AnalyzedClass clazz, String name) {
+  var getter =
+      clazz._classElement.lookUpGetter(name, clazz._classElement.library);
+  return getter?.variable;
+}
+
+MethodElement _getMethod(AnalyzedClass clazz, String name) {
+  return clazz._classElement.lookUpMethod(name, clazz._classElement.library);
+}
+
 // TODO(het): Make this work with chained expressions.
 /// Returns [true] if [expression] is immutable.
 bool isImmutable(ast.AST expression, AnalyzedClass analyzedClass) {
-  if (expression is ast.ASTWithSource) {
-    expression = (expression as ast.ASTWithSource).ast;
-  }
   if (expression is ast.LiteralPrimitive ||
       expression is ast.StaticRead ||
       expression is ast.EmptyExpr) {
@@ -68,12 +121,11 @@ bool isImmutable(ast.AST expression, AnalyzedClass analyzedClass) {
         (receiver is ast.StaticRead && receiver.analyzedClass != null)) {
       var clazz =
           receiver is ast.StaticRead ? receiver.analyzedClass : analyzedClass;
-      var field = clazz._classElement.getField(expression.name);
+      var field = _getField(clazz, expression.name);
       if (field != null) {
         return !field.isSynthetic && (field.isFinal || field.isConst);
       }
-      var method = clazz._classElement.getMethod(expression.name);
-      if (method != null) {
+      if (_getMethod(clazz, expression.name) != null) {
         // methods are immutable
         return true;
       }
@@ -94,70 +146,41 @@ bool isStaticSetter(String name, AnalyzedClass analyzedClass) {
   return setter != null && setter.isStatic;
 }
 
-// TODO(het): preserve any source info in the new expression
-/// If this interpolation can be optimized, returns the optimized expression.
-/// Otherwise, returns the original expression.
-///
-/// An example of an interpolation that can be optimized is `{{foo}}` where
-/// `foo` is a getter on the class that is known to return a [String]. This can
-/// be rewritten as just `foo`.
-ast.AST rewriteInterpolate(ast.AST original, AnalyzedClass analyzedClass) {
-  ast.AST unwrappedExpression = original;
-  if (original is ast.ASTWithSource) {
-    unwrappedExpression = original.ast;
-  }
-  if (unwrappedExpression is! ast.Interpolation) return original;
-  ast.Interpolation interpolation = unwrappedExpression;
-  if (interpolation.expressions.length == 1 &&
-      interpolation.strings[0].isEmpty &&
-      interpolation.strings[1].isEmpty) {
-    ast.AST expression = interpolation.expressions.single;
-    if (expression is ast.LiteralPrimitive) {
-      return ast.LiteralPrimitive(
-          expression.value == null ? '' : '${expression.value}');
-    }
-    if (expression is ast.PropertyRead) {
-      if (analyzedClass == null) return original;
-      var receiver = expression.receiver;
-      if (receiver is ast.ImplicitReceiver ||
-          receiver is ast.StaticRead && receiver.analyzedClass != null) {
-        var clazz =
-            receiver is ast.StaticRead ? receiver.analyzedClass : analyzedClass;
-        var field = clazz._classElement.getField(expression.name);
-        if (field != null) {
-          if (_stringTypeChecker.isExactlyType(field.type)) {
-            return ast.IfNull(expression, ast.LiteralPrimitive(''));
-          }
-        }
-      }
-    }
-  }
-  return original;
-}
-
-/// Rewrites an event tearoff as a method call.
+/// Rewrites an event tear-off as a method call.
 ///
 /// If [original] is a [ast.PropertyRead], and a method with the same name
 /// exists in [analyzedClass], then convert [original] into a [ast.MethodCall].
 ///
 /// If the underlying method has any parameters, then assume one parameter of
 /// '$event'.
-ast.AST rewriteTearoff(ast.AST original, AnalyzedClass analyzedClass) {
-  ast.AST unwrappedExpression = original;
-  if (original is ast.ASTWithSource) {
-    unwrappedExpression = original.ast;
-  }
-  if (unwrappedExpression is! ast.PropertyRead) return original;
-  ast.PropertyRead propertyRead = unwrappedExpression;
-  final method =
-      analyzedClass._classElement.type.lookUpInheritedMethod(propertyRead.name);
-  if (method == null) return original;
+ast.ASTWithSource rewriteTearOff(
+    ast.ASTWithSource original, AnalyzedClass analyzedClass) {
+  var unwrappedExpression = original.ast;
 
-  if (method.parameters.isEmpty) {
-    return _simpleMethodCall(propertyRead);
-  } else {
-    return _complexMethodCall(propertyRead);
+  if (unwrappedExpression is ast.PropertyRead) {
+    // Find the method, either on "this." or "super.".
+    final method = analyzedClass._classElement.type.lookUpInheritedMethod(
+      unwrappedExpression.name,
+    );
+
+    // If not found, we do not perform any re-write.
+    if (method == null) {
+      return original;
+    }
+
+    // If we have no positional parameters (optional or otherwise), then we
+    // translate the call into "foo()". If we have at least one, we translate
+    // the call into "foo($event)".
+    final positionalParameters = method.parameters.where((p) => !p.isNamed);
+    if (positionalParameters.isEmpty) {
+      return ast.ASTWithSource.from(
+          original, _simpleMethodCall(unwrappedExpression));
+    } else {
+      return ast.ASTWithSource.from(
+          original, _complexMethodCall(unwrappedExpression));
+    }
   }
+  return original;
 }
 
 ast.AST _simpleMethodCall(ast.PropertyRead propertyRead) =>
@@ -170,9 +193,6 @@ ast.AST _complexMethodCall(ast.PropertyRead propertyRead) =>
 
 /// Returns [true] if [expression] could be [null].
 bool canBeNull(ast.AST expression) {
-  if (expression is ast.ASTWithSource) {
-    expression = (expression as ast.ASTWithSource).ast;
-  }
   if (expression is ast.LiteralPrimitive ||
       expression is ast.EmptyExpr ||
       expression is ast.Interpolation) {
@@ -196,17 +216,25 @@ bool canBeNull(ast.AST expression) {
 /// * `SafePropertyRead`
 class _TypeResolver extends ast.AstVisitor<DartType, dynamic> {
   final DartType _dynamicType;
+  final DartType _stringType;
   final InterfaceType _implicitReceiverType;
+  final Map<String, DartType> _variables;
 
-  _TypeResolver(ClassElement classElement)
+  _TypeResolver(ClassElement classElement, this._variables)
       : _dynamicType = classElement.context.typeProvider.dynamicType,
+        _stringType = classElement.context.typeProvider.stringType,
         _implicitReceiverType = classElement.type;
 
   @override
-  DartType visitBinary(ast.Binary ast, _) => _dynamicType;
-
-  @override
-  DartType visitChain(ast.Chain ast, _) => _dynamicType;
+  DartType visitBinary(ast.Binary ast, _) {
+    // Special case for adding two strings together.
+    if (ast.operation == '+' &&
+        ast.left.visit(this, _) == _stringType &&
+        ast.right.visit(this, _) == _stringType) {
+      return _stringType;
+    }
+    return _dynamicType;
+  }
 
   @override
   DartType visitConditional(ast.Conditional ast, _) => _dynamicType;
@@ -225,7 +253,7 @@ class _TypeResolver extends ast.AstVisitor<DartType, dynamic> {
       _implicitReceiverType;
 
   @override
-  DartType visitInterpolation(ast.Interpolation ast, _) => _dynamicType;
+  DartType visitInterpolation(ast.Interpolation ast, _) => _stringType;
 
   @override
   DartType visitKeyedRead(ast.KeyedRead ast, _) => _dynamicType;
@@ -237,10 +265,8 @@ class _TypeResolver extends ast.AstVisitor<DartType, dynamic> {
   DartType visitLiteralArray(ast.LiteralArray ast, _) => _dynamicType;
 
   @override
-  DartType visitLiteralMap(ast.LiteralMap ast, _) => _dynamicType;
-
-  @override
-  DartType visitLiteralPrimitive(ast.LiteralPrimitive ast, _) => _dynamicType;
+  DartType visitLiteralPrimitive(ast.LiteralPrimitive ast, _) =>
+      ast.value is String ? _stringType : _dynamicType;
 
   @override
   DartType visitMethodCall(ast.MethodCall ast, _) {
@@ -260,6 +286,14 @@ class _TypeResolver extends ast.AstVisitor<DartType, dynamic> {
   @override
   DartType visitPropertyRead(ast.PropertyRead ast, _) {
     DartType receiverType = ast.receiver.visit(this, _);
+    if (identical(receiverType, _implicitReceiverType)) {
+      // This may be a local variable.
+      for (var variableName in _variables.keys) {
+        if (variableName == ast.name) {
+          return _variables[variableName] ?? _dynamicType;
+        }
+      }
+    }
     return _lookupGetterReturnType(receiverType, ast.name);
   }
 
@@ -279,7 +313,10 @@ class _TypeResolver extends ast.AstVisitor<DartType, dynamic> {
   }
 
   @override
-  DartType visitStaticRead(ast.StaticRead ast, _) => _dynamicType;
+  DartType visitStaticRead(ast.StaticRead ast, _) =>
+      ast.id.analyzedClass == null
+          ? _dynamicType
+          : ast.id.analyzedClass._classElement.type;
 
   /// Returns the return type of [getterName] on [receiverType], if it exists.
   ///

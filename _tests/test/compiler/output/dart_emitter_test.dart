@@ -7,9 +7,9 @@ import 'package:angular/src/compiler/output/output_ast.dart' as o;
 
 var someModuleUrl = 'asset:somePackage/lib/somePath';
 var anotherModuleUrl = 'asset:somePackage/lib/someOtherPath';
-var sameModuleIdentifier = CompileIdentifierMetadata<dynamic>(
-    name: 'someLocalId', moduleUrl: someModuleUrl);
-var externalModuleIdentifier = CompileIdentifierMetadata<dynamic>(
+var sameModuleIdentifier =
+    CompileIdentifierMetadata(name: 'someLocalId', moduleUrl: someModuleUrl);
+var externalModuleIdentifier = CompileIdentifierMetadata(
     name: 'someExternalId', moduleUrl: anotherModuleUrl);
 
 void main() {
@@ -26,9 +26,8 @@ void main() {
       emitter = DartEmitter();
       someVar = o.variable('someVar');
     });
-    String emitStmt(o.Statement stmt, [List<String> exportedVars]) {
-      exportedVars ??= [];
-      return emitter.emitStatements(someModuleUrl, [stmt], exportedVars, {});
+    String emitStmt(o.Statement stmt) {
+      return emitter.emitStatements(someModuleUrl, [stmt], {});
     }
 
     test('should declare variables', () {
@@ -50,8 +49,8 @@ void main() {
                   o.BuiltinType(o.BuiltinTypeName.Int, [o.TypeModifier.Const])))
               .toDeclStmt(null, [o.StmtModifier.Final])),
           'final int someVar = 1;');
-      expect(emitStmt(someVar.set(o.literal(1)).toDeclStmt(), ['someVar']),
-          'var someVar = 1;');
+      expect(
+          emitStmt(someVar.set(o.literal(1)).toDeclStmt()), 'var someVar = 1;');
       expect(emitStmt(someVar.set(o.literal(1)).toDeclStmt(o.INT_TYPE)),
           'int someVar = 1;');
     });
@@ -99,6 +98,15 @@ void main() {
           emitStmt(
               o.variable('SomeClass').instantiate([o.literal(1)]).toStmt()),
           'SomeClass(1);');
+      expect(
+          emitStmt(o
+              .variable('a')
+              .plus(o.variable('b'))
+              .callMethod('toString', []).toStmt()),
+          '(a + b).toString();');
+      expect(
+          emitStmt(o.not(o.variable('a')).callMethod('toString', []).toStmt()),
+          '(!a).toString();');
     });
     test('should omit optional const', () {
       expect(
@@ -166,7 +174,7 @@ void main() {
       var lhs = o.variable('lhs');
       var rhs = o.variable('rhs');
       expect(emitStmt(someVar.cast(o.INT_TYPE).toStmt()), '(someVar as int);');
-      expect(emitStmt(o.not(someVar).toStmt()), '!someVar;');
+      expect(emitStmt(o.not(someVar).toStmt()), '(!someVar);');
       expect(
           emitStmt(someVar
               .conditional(o.variable('trueCase'), o.variable('falseCase'))
@@ -279,8 +287,8 @@ void main() {
       test('should support declaring constructors', () {
         var superCall = o.SUPER_EXPR.callFn([o.variable('someParam')]).toStmt();
         expect(
-            emitStmt(o.ClassStmt(
-                'SomeClass', null, [], [], o.ClassMethod(null, [], []), [])),
+            emitStmt(
+                o.ClassStmt('SomeClass', null, [], [], o.Constructor(), [])),
             ['class SomeClass {', '  SomeClass();', '}'].join('\n'));
         expect(
             emitStmt(o.ClassStmt(
@@ -288,18 +296,18 @@ void main() {
                 null,
                 [],
                 [],
-                o.ClassMethod(null, [o.FnParam('someParam', o.INT_TYPE)], []),
+                o.Constructor(params: [o.FnParam('someParam', o.INT_TYPE)]),
                 [])),
             ['class SomeClass {', '  SomeClass(int someParam);', '}']
                 .join('\n'));
         expect(
             emitStmt(o.ClassStmt('SomeClass', null, [], [],
-                o.ClassMethod(null, [], [superCall]), [])),
+                o.Constructor(initializers: [superCall]), [])),
             ['class SomeClass {', '  SomeClass(): super(someParam);', '}']
                 .join('\n'));
         expect(
             emitStmt(o.ClassStmt('SomeClass', null, [], [],
-                o.ClassMethod(null, [], [callSomeMethod]), [])),
+                o.Constructor(body: [callSomeMethod]), [])),
             [
               'class SomeClass {',
               '  SomeClass() {',
@@ -479,6 +487,34 @@ void main() {
           'Map<String, dynamic> a = null;');
       expect(emitStmt(writeVarExpr.toDeclStmt(o.MapType(o.INT_TYPE))),
           'Map<String, int> a = null;');
+    });
+    test('should support shadowing members', () {
+      var name = 'someValue';
+      var field = o.ClassField(name);
+      var method = o.ClassMethod(
+        'someMethod',
+        [o.FnParam(name)],
+        [
+          // Test shadowing of `WriteClassMemberExpr`.
+          o.WriteClassMemberExpr(name, o.variable(name)).toStmt(),
+          // Test shadowing of `ReadClassMemberExpr`.
+          o.variable(name).set(o.ReadClassMemberExpr(name)).toStmt(),
+        ],
+      );
+      var classStmt =
+          o.ClassStmt('SomeClass', null, [field], [], null, [method]);
+      expect(
+        emitStmt(classStmt),
+        [
+          'class SomeClass {',
+          '  var $name;',
+          '  void someMethod($name) {',
+          '    this.$name = $name;',
+          '    $name = this.$name;',
+          '  }',
+          '}'
+        ].join('\n'),
+      );
     });
   });
 }

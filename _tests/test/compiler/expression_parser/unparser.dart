@@ -4,9 +4,9 @@ class Unparser implements AstVisitor {
   static final _quoteRegExp = RegExp(r'"');
   StringBuffer sb;
 
-  String unparse(AST ast) {
+  String unparse(ASTWithSource ast) {
     sb = StringBuffer();
-    _visit(ast);
+    _visit(ast.ast);
     return sb.toString();
   }
 
@@ -30,15 +30,6 @@ class Unparser implements AstVisitor {
     _visit(ast.left);
     sb.write(' ${ast.operation} ');
     _visit(ast.right);
-  }
-
-  @override
-  void visitChain(Chain ast, dynamic context) {
-    var len = ast.expressions.length;
-    for (var i = 0; i < len; i++) {
-      _visit(ast.expressions[i]);
-      sb.write(i == len - 1 ? ";" : "; ");
-    }
   }
 
   @override
@@ -135,19 +126,6 @@ class Unparser implements AstVisitor {
       _visit(expression);
     }
     sb.write("]");
-  }
-
-  @override
-  void visitLiteralMap(LiteralMap ast, dynamic context) {
-    sb.write("{");
-    var isFirst = true;
-    for (var i = 0; i < ast.keys.length; i++) {
-      if (!isFirst) sb.write(", ");
-      isFirst = false;
-      sb.write('${ast.keys[i]}: ');
-      _visit(ast.values[i]);
-    }
-    sb.write("}");
   }
 
   @override

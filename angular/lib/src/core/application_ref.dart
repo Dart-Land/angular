@@ -20,7 +20,7 @@ ApplicationRef internalCreateApplicationRef(
 ) =>
     ApplicationRef._(
       ngZone,
-      unsafeCast(injector.get(ExceptionHandler)),
+      injector.provideType(ExceptionHandler),
       injector,
     );
 
@@ -84,12 +84,11 @@ class ApplicationRef extends ChangeDetectionHost {
         assert(component.location != null);
         document.body.append(component.location);
       }
-      final testability = unsafeCast<Testability>(
-        component.injector.get(Testability, null),
-      );
+      final injector = component.injector;
+      final Testability testability = injector.provideTypeOptional(Testability);
       if (testability != null) {
-        final registry = unsafeCast<TestabilityRegistry>(
-          _injector.get(TestabilityRegistry),
+        final registry = _injector.provideType<TestabilityRegistry>(
+          TestabilityRegistry,
         );
         registry.registerApplication(component.location, testability);
       }

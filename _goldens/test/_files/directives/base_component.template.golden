@@ -1,104 +1,100 @@
 // **************************************************************************
-// Generator: Instance of 'Compiler'
+// Generator: AngularDart Compiler
 // **************************************************************************
 
-// ignore_for_file: cancel_subscriptions,constant_identifier_names,duplicate_import,non_constant_identifier_names,library_prefixes,UNUSED_IMPORT,UNUSED_SHOWN_NAME
 import 'base_component.dart';
 export 'base_component.dart';
-import 'package:angular/angular.dart';
-import 'components.dart';
-import 'directives.dart' as directive;
 import 'package:angular/src/di/reflector.dart' as _ngRef;
 import 'package:angular/angular.template.dart' as _ref0;
-import 'package:angular/src/core/linker/app_view.dart';
+import 'package:angular/src/core/linker/views/component_view.dart' as import0;
 import 'base_component.dart' as import1;
-import 'dart:html' as import2;
-import 'components.template.dart' as import3;
-import 'components.dart' as import4;
-import 'package:angular/src/core/render/api.dart';
-import 'package:angular/src/core/linker/view_type.dart' as import6;
+import 'components.template.dart' as import2;
+import 'components.dart' as import3;
+import 'package:angular/src/core/linker/style_encapsulation.dart' as import4;
+import 'package:angular/src/core/linker/views/view.dart' as import5;
 import 'package:angular/src/core/change_detection/change_detection.dart';
-import 'package:angular/src/core/linker/app_view_utils.dart' as import8;
-import 'package:angular/src/runtime.dart' as import9;
+import 'dart:html' as import7;
+import 'package:angular/src/runtime.dart' as import8;
+import 'package:angular/src/runtime/dom_helpers.dart' as import9;
 import 'package:angular/angular.dart';
+import 'package:angular/src/core/linker/views/host_view.dart' as import11;
 
 final List<dynamic> styles$TestFooComponent = const [];
 
-class ViewTestFooComponent0 extends AppView<import1.TestFooComponent> {
-  import2.Element _el_2;
-  import3.ViewTestSubComponent0 _compView_2;
-  import4.TestSubComponent _TestSubComponent_2_5;
-  static RenderComponentType _renderType;
-  ViewTestFooComponent0(AppView<dynamic> parentView, int parentIndex) : super(import6.ViewType.component, {}, parentView, parentIndex, ChangeDetectionStrategy.CheckAlways) {
-    rootEl = import2.document.createElement('test-foo');
-    _renderType ??= import8.appViewUtils.createRenderType((import9.isDevMode ? 'asset:_goldens/test/_files/directives/base_component.dart' : null), ViewEncapsulation.None, styles$TestFooComponent);
-    setupComponentType(_renderType);
+// View for component TestFooComponent in asset:_goldens/test/_files/directives/base_component.dart (changeDetection: Default)
+class ViewTestFooComponent0 extends import0.ComponentView<import1.TestFooComponent> {
+  import2.ViewTestSubComponent0 _compView_2;
+  import3.TestSubComponent _TestSubComponent_2_5;
+  static import4.ComponentStyles _componentStyles;
+  ViewTestFooComponent0(import5.View parentView, int parentIndex) : super(parentView, parentIndex, ChangeDetectionStrategy.CheckAlways) {
+    this.initComponentStyles();
+    this.rootElement = import7.document.createElement('test-foo');
   }
+  static String get _debugComponentUrl {
+    return (import8.isDevMode ? 'asset:_goldens/test/_files/directives/base_component.dart' : null);
+  }
+
   @override
-  ComponentRef<import1.TestFooComponent> build() {
-    final _rootEl = rootEl;
-    final import2.HtmlElement parentRenderNode = initViewRoot(_rootEl);
-    var doc = import2.document;
-    final _el_0 = createDivAndAppend(doc, parentRenderNode);
-    final _text_1 = import2.Text('Foo');
-    _el_0.append(_text_1);
-    _compView_2 = import3.ViewTestSubComponent0(this, 2);
-    _el_2 = _compView_2.rootEl;
+  void build() {
+    final import7.HtmlElement parentRenderNode = this.initViewRoot();
+    final doc = import7.document;
+    final _el_0 = import9.appendDiv(doc, parentRenderNode);
+    final _text_1 = import9.appendText(_el_0, 'Foo');
+    // Child component TestSubComponent in asset:_goldens/test/_files/directives/components.dart (changeDetection: Default)
+    this._compView_2 = import2.ViewTestSubComponent0(this, 2);
+    final _el_2 = this._compView_2.rootElement;
     parentRenderNode.append(_el_2);
-    _TestSubComponent_2_5 = import4.TestSubComponent();
-    _compView_2.create(_TestSubComponent_2_5, []);
-    init(const [], null);
+    this._TestSubComponent_2_5 = import3.TestSubComponent();
+    this._compView_2.create(this._TestSubComponent_2_5);
   }
 
   @override
   void detectChangesInternal() {
-    _compView_2.detectChanges();
+    this._compView_2.detectChanges();
   }
 
   @override
   void destroyInternal() {
-    _compView_2?.destroy();
-  }
-}
-
-AppView<import1.TestFooComponent> viewFactory_TestFooComponent0(AppView<dynamic> parentView, int parentIndex) {
-  return ViewTestFooComponent0(parentView, parentIndex);
-}
-
-final List<dynamic> styles$TestFooComponentHost = const [];
-
-class _ViewTestFooComponentHost0 extends AppView<import1.TestFooComponent> {
-  ViewTestFooComponent0 _compView_0;
-  import1.TestFooComponent _TestFooComponent_0_5;
-  _ViewTestFooComponentHost0(AppView<dynamic> parentView, int parentIndex) : super(import6.ViewType.host, {}, parentView, parentIndex, ChangeDetectionStrategy.CheckAlways);
-  @override
-  ComponentRef<import1.TestFooComponent> build() {
-    _compView_0 = ViewTestFooComponent0(this, 0);
-    rootEl = _compView_0.rootEl;
-    _TestFooComponent_0_5 = import1.TestFooComponent();
-    _compView_0.create(_TestFooComponent_0_5, projectableNodes);
-    init0(rootEl);
-    return ComponentRef(0, this, rootEl, _TestFooComponent_0_5);
+    this._compView_2.destroyInternalState();
   }
 
-  @override
-  void detectChangesInternal() {
-    _compView_0.detectChanges();
+  static void _debugClearComponentStyles() {
+    _componentStyles = null;
   }
 
-  @override
-  void destroyInternal() {
-    _compView_0?.destroy();
+  void initComponentStyles() {
+    var styles = _componentStyles;
+    if (identical(styles, null)) {
+      _componentStyles = (styles = import4.ComponentStyles.unscoped(styles$TestFooComponent, _debugComponentUrl));
+      if (import8.isDevMode) {
+        import4.ComponentStyles.debugOnClear(_debugClearComponentStyles);
+      }
+    }
+    this.componentStyles = styles;
   }
-}
-
-AppView<import1.TestFooComponent> viewFactory_TestFooComponentHost0(AppView<dynamic> parentView, int parentIndex) {
-  return _ViewTestFooComponentHost0(parentView, parentIndex);
 }
 
 const ComponentFactory<import1.TestFooComponent> _TestFooComponentNgFactory = const ComponentFactory('test-foo', viewFactory_TestFooComponentHost0);
 ComponentFactory<import1.TestFooComponent> get TestFooComponentNgFactory {
   return _TestFooComponentNgFactory;
+}
+
+final List<dynamic> styles$TestFooComponentHost = const [];
+
+// Host for component TestFooComponent in asset:_goldens/test/_files/directives/base_component.dart (changeDetection: Default)
+class _ViewTestFooComponentHost0 extends import11.HostView<import1.TestFooComponent> {
+  @override
+  void build() {
+    // Child component TestFooComponent in asset:_goldens/test/_files/directives/base_component.dart (changeDetection: Default)
+    this.componentView = ViewTestFooComponent0(this, 0);
+    final _el_0 = this.componentView.rootElement;
+    this.component = import1.TestFooComponent();
+    this.initRootNode(_el_0);
+  }
+}
+
+import11.HostView<import1.TestFooComponent> viewFactory_TestFooComponentHost0() {
+  return _ViewTestFooComponentHost0();
 }
 
 var _visited = false;

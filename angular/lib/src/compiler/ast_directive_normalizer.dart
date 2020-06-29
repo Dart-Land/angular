@@ -6,26 +6,16 @@ import 'package:angular_compiler/angular_compiler.dart';
 import 'package:angular_compiler/cli.dart';
 
 import 'compile_metadata.dart';
-import 'expression_parser/visitor.dart';
 import 'parse_util.dart';
-import 'style_url_resolver.dart' show extractStyleUrls, isStyleUrlResolvable;
+import 'style_url_resolver.dart' show isStyleUrlResolvable;
 
 /// Loads the content of `templateUrl` and `styleUrls` to normalize directives.
 ///
 /// [CompileDirectiveMetadata] is converted to a normalized form where template
 /// content and styles are available to the compilation step as simple strings.
-///
-/// The normalizer also resolves inline style and stylesheets in the template.
 class AstDirectiveNormalizer {
   final NgAssetReader _reader;
   const AstDirectiveNormalizer(this._reader);
-
-  void _parseExpressionsWithLegacyParser(
-    ast.TemplateAst astNode,
-    List<CompileIdentifierMetadata> exports,
-  ) {
-    astNode.accept(LegacyExpressionVisitor(exports: exports));
-  }
 
   Future<CompileDirectiveMetadata> normalizeDirective(
     CompileDirectiveMetadata directive,
@@ -37,38 +27,14 @@ class AstDirectiveNormalizer {
     return _normalizeTemplate(
       directive.type,
       directive.template,
-      exports: directive.exports,
     ).then((result) {
-      return CompileDirectiveMetadata(
-        type: directive.type,
-        originType: directive.originType,
-        metadataType: directive.metadataType,
-        selector: directive.selector,
-        exportAs: directive.exportAs,
-        changeDetection: directive.changeDetection,
-        inputs: directive.inputs,
-        inputTypes: directive.inputTypes,
-        outputs: directive.outputs,
-        hostBindings: directive.hostBindings,
-        hostListeners: directive.hostListeners,
-        lifecycleHooks: directive.lifecycleHooks,
-        providers: directive.providers,
-        viewProviders: directive.viewProviders,
-        exports: directive.exports,
-        queries: directive.queries,
-        viewQueries: directive.viewQueries,
-        template: result,
-        analyzedClass: directive.analyzedClass,
-        visibility: directive.visibility,
-      );
+      return CompileDirectiveMetadata.from(directive, template: result);
     });
   }
 
   Future<CompileTemplateMetadata> _normalizeTemplate(
-    CompileTypeMetadata directiveType,
-    CompileTemplateMetadata template, {
-    List<CompileIdentifierMetadata> exports,
-  }) async {
+      CompileTypeMetadata directiveType,
+      CompileTemplateMetadata template) async {
     template ??= CompileTemplateMetadata(template: '');
     if (template.styles != null && template.styles.isNotEmpty) {
       await _validateStyleUrlsNotMeant(template.styles, directiveType);
@@ -80,8 +46,6 @@ class AstDirectiveNormalizer {
         template,
         template.template,
         directiveType.moduleUrl,
-        template.preserveWhitespace,
-        exports: exports,
       );
     }
     if (template.templateUrl != null) {
@@ -89,21 +53,32 @@ class AstDirectiveNormalizer {
         directiveType.moduleUrl,
         template.templateUrl,
       );
-      return _reader.readText(sourceAbsoluteUrl).then((templateContent) {
-        return _normalizeLoadedTemplate(
-          directiveType,
-          template,
-          templateContent,
-          sourceAbsoluteUrl,
-          template.preserveWhitespace,
-          exports: exports,
-        );
-      });
+      final templateContent =
+          await _readTextOrThrow(sourceAbsoluteUrl, directiveType);
+      return _normalizeLoadedTemplate(
+        directiveType,
+        template,
+        templateContent,
+        sourceAbsoluteUrl,
+      );
     }
     throwFailure(''
         'Component "${directiveType.name}" in \n'
         '${directiveType.moduleUrl}:\n'
         'Requires either a "template" or "templateUrl"; had neither.');
+  }
+
+  Future<String> _readTextOrThrow(
+      String sourceAbsoluteUrl, CompileTypeMetadata directiveType) async {
+    try {
+      return await _reader.readText(sourceAbsoluteUrl);
+    } catch (e) {
+      throwFailure(''
+          'Component "${directiveType.name}" in \n'
+          '${directiveType.moduleUrl}:\n'
+          'Failed to read templateUrl $sourceAbsoluteUrl.\n'
+          'Ensure the file exists on disk and is available to the compiler.');
+    }
   }
 
   Future<void> _validateStyleUrlsNotMeant(
@@ -153,57 +128,22 @@ class AstDirectiveNormalizer {
   }
 
   CompileTemplateMetadata _normalizeLoadedTemplate(
-    CompileTypeMetadata directiveType,
-    CompileTemplateMetadata templateMeta,
-    String template,
-    String templateAbsUrl,
-    bool preserveWhitespace, {
-    List<CompileIdentifierMetadata> exports = const [],
-  }) {
-    // Parse the template, and visit to find <style>/<link> and <ng-content>.
-    final visitor = _TemplateNormalizerVisitor();
-    final exceptionHandler = AstExceptionHandler(template, directiveType.name);
-    final parsedNodes = ast.parse(
-      template,
-      // TODO: Use the full-file path when possible.
-      // Otherwise, the analyzer crashes today seeing an 'asset:...' URL.
-      sourceUrl: Uri.parse(templateAbsUrl).replace(scheme: 'file').toFilePath(),
-      exceptionHandler: exceptionHandler,
-    );
-    exceptionHandler.maybeReportExceptions();
+      CompileTypeMetadata directiveType,
+      CompileTemplateMetadata templateMeta,
+      String template,
+      String templateAbsUrl) {
+    // TODO(alorenzen): Remove need to parse template here.
+    // We should be able to calculate this in the main parse.
+    var ngContentSelectors =
+        _parseTemplate(template, directiveType, templateAbsUrl);
 
-    for (final node in parsedNodes) {
-      node.accept(visitor);
-      _parseExpressionsWithLegacyParser(node, exports);
-    }
-
-    final allInlineStyles = templateMeta.styles + visitor.inlineStyles;
-    final allExternalStyles = <String>[];
-    final allResolvedStyles = <String>[];
-
-    // Try to resolve external stylesheets.
-    for (final url in visitor.externalStyles) {
-      if (isStyleUrlResolvable(url)) {
-        allExternalStyles.add(_reader.resolveUrl(templateAbsUrl, url));
-      }
-    }
-    for (final url in templateMeta.styleUrls) {
-      if (isStyleUrlResolvable(url)) {
-        allExternalStyles.add(_reader.resolveUrl(directiveType.moduleUrl, url));
-      }
-    }
-
-    // Try to resolve <style> import statements.
-    for (final inlineStyle in allInlineStyles) {
-      final import = extractStyleUrls(templateAbsUrl, inlineStyle);
-      allExternalStyles.addAll(import.styleUrls);
-      allResolvedStyles.add(import.style);
-    }
+    List<String> allExternalStyles =
+        _resolveExternalStylesheets(templateMeta, directiveType.moduleUrl);
 
     // Optimization: Turn off encapsulation when there are no styles to apply.
     var encapsulation = templateMeta.encapsulation;
     if (encapsulation == ViewEncapsulation.Emulated &&
-        allResolvedStyles.isEmpty &&
+        templateMeta.styles.isEmpty &&
         allExternalStyles.isEmpty) {
       encapsulation = ViewEncapsulation.None;
     }
@@ -212,34 +152,52 @@ class AstDirectiveNormalizer {
       encapsulation: encapsulation,
       template: template,
       templateUrl: templateAbsUrl,
-      styles: allResolvedStyles,
+      styles: templateMeta.styles,
       styleUrls: allExternalStyles,
-      ngContentSelectors: visitor.ngContentSelectors,
-      preserveWhitespace: preserveWhitespace,
+      ngContentSelectors: ngContentSelectors,
+      preserveWhitespace: templateMeta.preserveWhitespace,
     );
+  }
+
+  List<String> _resolveExternalStylesheets(
+      CompileTemplateMetadata templateMeta, String moduleUrl) {
+    final allExternalStyles = <String>[];
+
+    // Try to resolve external stylesheets.
+    for (final url in templateMeta.styleUrls) {
+      if (isStyleUrlResolvable(url)) {
+        allExternalStyles.add(_reader.resolveUrl(moduleUrl, url));
+      } else {
+        throwFailure('Invalid Style URL: "$url" (from "$moduleUrl").');
+      }
+    }
+    return allExternalStyles;
+  }
+
+  /// Parse the template, and visit to find <ng-content>.
+  List<String> _parseTemplate(String template,
+      CompileTypeMetadata directiveType, String templateAbsUrl) {
+    final exceptionHandler = AstExceptionHandler(template, templateAbsUrl);
+    final parsedNodes = ast.parse(
+      template,
+      // TODO: Use the full-file path when possible.
+      // Otherwise, the analyzer crashes today seeing an 'asset:...' URL.
+      sourceUrl: Uri.parse(templateAbsUrl).replace(scheme: 'file').toFilePath(),
+      exceptionHandler: exceptionHandler,
+      desugar: false,
+    );
+    exceptionHandler.maybeReportExceptions();
+
+    final visitor = _TemplateNormalizerVisitor();
+    for (final node in parsedNodes) {
+      node.accept(visitor);
+    }
+    return visitor.ngContentSelectors;
   }
 }
 
 class _TemplateNormalizerVisitor extends ast.RecursiveTemplateAstVisitor<Null> {
-  final externalStyles = <String>[];
-  final inlineStyles = <String>[];
   final ngContentSelectors = <String>[];
-
-  static String _extractAttrValue(ast.ElementAst astNode, String name) =>
-      astNode?.attributes
-          ?.firstWhere((a) => a.name.toLowerCase() == name, orElse: () => null)
-          ?.value;
-
-  static String _extractInnerText(ast.ElementAst astNode) {
-    if (astNode.childNodes.isEmpty) {
-      return '';
-    }
-    final firstChild = astNode.childNodes.first;
-    if (firstChild is ast.TextAst) {
-      return firstChild.value;
-    }
-    return '';
-  }
 
   @override
   ast.EmbeddedContentAst visitEmbeddedContent(
@@ -248,24 +206,5 @@ class _TemplateNormalizerVisitor extends ast.RecursiveTemplateAstVisitor<Null> {
   ]) {
     ngContentSelectors.add(astNode.selector);
     return astNode;
-  }
-
-  @override
-  ast.TemplateAst visitElement(ast.ElementAst astNode, [_]) {
-    final tagName = astNode.name.toLowerCase();
-    switch (tagName) {
-      case 'link':
-        if (_extractAttrValue(astNode, 'rel')?.toLowerCase() == 'stylesheet') {
-          final href = _extractAttrValue(astNode, 'href');
-          if (href != null) {
-            externalStyles.add(href);
-          }
-        }
-        break;
-      case 'style':
-        inlineStyles.add(_extractInnerText(astNode));
-        break;
-    }
-    return super.visitElement(astNode);
   }
 }

@@ -30,7 +30,6 @@ class TypedElement {
   }
 }
 
-// TODO(leonsenft): ensure failure messages have an actionable context.
 /// Parses types from compile-time constant `Typed` expressions.
 class TypedReader {
   final ClassElement _hostElement;
@@ -43,13 +42,11 @@ class TypedReader {
   TypedReader(this._hostElement);
 
   /// Parses the value of a compile-time constant `Typed` expression.
-  ///
-  /// Returns a [TypeLink] that represents the type defined by [typedObject].
   TypedElement parse(DartObject typedObject) {
     if (!$Typed.isExactlyType(typedObject.type)) {
+      final typeStr = typeToCode(typedObject.type);
       throwFailure(''
-          'Expected an expression of type "Typed", but got '
-          '"${typedObject.type}"');
+          'Expected an expression of type "Typed", but got "$typeStr"');
     }
     return _parseTyped(typedObject, root: true);
   }
@@ -70,7 +67,7 @@ class TypedReader {
           '  * "Symbol"\n'
           '  * "Type"\n'
           '  * "Typed"\n'
-          'Got an expression of type "${object.type}".');
+          'Got an expression of type "${typeToCode(object.type)}".');
     }
   }
 
@@ -97,27 +94,10 @@ class TypedReader {
   TypedElement _parseTyped(DartObject typedObject, {bool root = false}) {
     final type = typeArgumentOf(typedObject);
     if (type is ParameterizedType && type.typeParameters.isNotEmpty) {
-      if (root) {
-        if (!$Directive.hasAnnotationOf(type.element)) {
-          throwFailure(''
-              'Expected a "Typed" expression with a "Component" or "Directive" '
-              'annotated type, but got "Typed<${type.name}>"');
-        }
-        // TODO(b/111800117): generics with bounds aren't yet supported.
-        // Generics aren't supported for components and directives with bounded
-        // type parameters. However, it's fine for a *nested* `Typed` expression
-        // used as a type argument to apply type arguments to a type with
-        // bounded type parameters.
-        for (final typeParameter in type.typeParameters) {
-          if (typeParameter.bound != null) {
-            throwFailure(''
-                "Generic type arguments aren't supported for components and "
-                'directives with bounded type parameters. Either remove all '
-                '"Typed<${type.name}>" expressions and continue to use '
-                '"${type.name}" without type arguments, or remove the type '
-                'parameter bounds from "${type.name}".');
-          }
-        }
+      if (root && !$Directive.hasAnnotationOf(type.element)) {
+        throwFailure(''
+            'Expected a "Typed" expression with a "Component" or "Directive" '
+            'annotated type, but got "Typed<${type.name}>"');
       }
       String on;
       final reader = ConstantReader(typedObject);
@@ -137,6 +117,14 @@ class TypedReader {
       final typeArguments = typeArgumentsReader.isList
           ? typeArgumentsReader.listValue.map(_parse).toList()
           : type.typeArguments.map(linkTypeOf).toList();
+      for (final typeArgument in typeArguments) {
+        if (typeArgument.isPrivate) {
+          throwFailure(''
+              'Directive type arguments must be public, but "${type.name}" was '
+              'given private type argument "${typeArgument.symbol}" by '
+              '"${_hostElement.name}".');
+        }
+      }
       return TypedElement(
         TypeLink(
           getTypeName(type),
@@ -148,8 +136,8 @@ class TypedReader {
     } else {
       throwFailure(''
           'Expected a generic type to be used as a type argument of "Typed", '
-          'but got concrete type "$type". A concrete type may be used directly '
-          'as a type argument without the need for "Typed".');
+          'but got concrete type "${typeToCode(type)}". A concrete type may be'
+          'used directly as a type argument without the need for "Typed".');
     }
   }
 }

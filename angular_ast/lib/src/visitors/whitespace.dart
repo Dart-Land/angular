@@ -21,6 +21,10 @@ class MinimizeWhitespaceVisitor extends RecursiveTemplateAstVisitor<bool> {
     if (astNode is ContainerAst) {
       annotations = astNode.annotations;
     } else if (astNode is ElementAst) {
+      if (astNode.name == 'pre') {
+        // Don't modify whitespace of preformatted text.
+        return true;
+      }
       annotations = astNode.annotations;
     } else if (astNode is EmbeddedTemplateAst) {
       annotations = astNode.annotations;
@@ -189,7 +193,7 @@ class MinimizeWhitespaceVisitor extends RecursiveTemplateAstVisitor<bool> {
   }
 
   // https://developer.mozilla.org/en-US/docs/Web/HTML/Inline_elements
-  static final _commonInlineElements = Set<String>.from([
+  static final _commonInlineElements = <String>{
     'a',
     'abbr',
     'acronym',
@@ -221,8 +225,8 @@ class MinimizeWhitespaceVisitor extends RecursiveTemplateAstVisitor<bool> {
     'textarea',
     'time',
     'tt',
-    'var'
-  ]);
+    'var',
+  };
 
   /// Returns whether [tagName] is normally an `display: inline` element.
   ///

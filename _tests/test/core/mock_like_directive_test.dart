@@ -20,7 +20,7 @@ void main() {
 
   test("shouldn't support null @Output if not mock-like", () async {
     final testBed = NgTestBed<TestFakeNotificationComponent>();
-    expect(testBed.create(), throwsA(const isInstanceOf<NoSuchMethodError>()));
+    expect(testBed.create(), throwsA(const TypeMatcher<NoSuchMethodError>()));
   });
 }
 
@@ -47,7 +47,7 @@ class MockNotifierComponent implements NotifierComponent {
 @Component(
   selector: 'test-mock-notifier',
   template: '''
-    <notifier (notifications)="notify(\$event)">'
+    <notifier (notifications)="notify(\$event)">
     </notifier>''',
   directives: [MockNotifierComponent],
 )
@@ -66,7 +66,7 @@ class FakeNotifierComponent extends NotifierComponent {
 @Component(
   selector: 'test-fake-notifier',
   template: '''
-    <notifier (notifications)="notify(\$event)">'
+    <notifier (notifications)="notify(\$event)">
     </notifier>''',
   directives: [FakeNotifierComponent],
 )

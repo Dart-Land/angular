@@ -27,7 +27,7 @@ void main() {
     await testFixture.update((component) => component.value = 'New property');
     expect(directives[0].dirProp, 'New property');
     expect(directives[1].dirProp, 'Hi there!');
-    expect(directives[2].dirProp, 'Hi there!');
+    expect(directives[2].dirProp, 'Hey there!!');
     expect(directives[3].dirProp, 'One more New property');
   });
 
@@ -73,7 +73,7 @@ void main() {
     final testBed = NgTestBed<RetrievesDependencyFromHostComponent>();
     final testFixture = await testBed.create();
     final needsPublicApi = testFixture.assertOnlyInstance.needsPublicApi;
-    expect(needsPublicApi.api, const isInstanceOf<PrivateImpl>());
+    expect(needsPublicApi.api, const TypeMatcher<PrivateImpl>());
   });
 
   test('should consume pipe binding', () async {
@@ -128,7 +128,7 @@ class MyDir {
   selector: 'bound-directive-input',
   template: '<div my-dir [elProp]="value"></div>'
       '<div my-dir elProp="Hi there!"></div>'
-      '<div my-dir elProp="Hi {{\'there!\'}}"></div>'
+      '<div my-dir elProp="Hey {{\'there!!\'}}"></div>'
       '<div my-dir elProp="One more {{value}}"></div>',
   directives: [
     MyDir,

@@ -1,3 +1,5 @@
+import 'package:angular/src/core/di/opaque_token.dart';
+import 'package:angular/src/runtime.dart';
 import 'package:meta/meta.dart';
 
 import '../errors.dart' as errors;
@@ -85,7 +87,7 @@ abstract class Injector {
   @mustCallSuper
   dynamic get(Object token, [Object notFoundValue = throwIfNotFound]) {
     errors.debugInjectorEnter(token);
-    final result = injectOptionalUntyped(token, notFoundValue);
+    final result = provideUntyped(token, notFoundValue);
     if (identical(result, throwIfNotFound)) {
       return throwsNotFound(this, token);
     }
@@ -95,22 +97,58 @@ abstract class Injector {
 
   /// Injects and returns an object representing [token].
   ///
-  /// ```dart
-  /// final rpcService = injector.inject<RpcService>();
-  /// ```
-  ///
-  /// **EXPERIMENTAL**: Reified types are currently not supported in all of the
-  /// various Dart runtime implementations (only DDC, not Dart2JS or the VM), so
-  /// [fallbackToken] is currently required to be used.
-  @experimental
-  @protected
-  T inject<T>(Object token);
-
-  /// Injects and returns an object representing [token].
-  ///
   /// If the key was not found, returns [orElse] (default is `null`).
-  @experimental
-  Object injectOptionalUntyped(Object token, [Object orElse]);
+  ///
+  /// **NOTE**: This is an internal-only method and may be removed.
+  @protected
+  Object provideUntyped(Object token, [Object orElse]);
+
+  /// Finds and returns an object instance provided for a type [token].
+  ///
+  /// A runtime assertion is thrown in debug mode if:
+  ///
+  /// * [T] is explicitly or implicitly bound to `dynamic`.
+  /// * If [T] is not `Object`, the DI [token] is not the *same* as [T].
+  ///
+  /// An error is thrown if a provider is not found.
+  T provideType<T extends Object>(Type token) {
+    // NOTE: It is not possible to design this API in such a way that only "T"
+    // can be used, and not require "token" as well. Our injection system
+    // currently uses "identical" (similar to JS' ===), and the types passed
+    // through "T" are not canonical (they are == equivalent, but not ===).
+    //
+    // See historic discussion here: dartbug.com/35098
+    assert(T != dynamic, 'Returning a dynamic is not supported');
+    return unsafeCast(get(token));
+  }
+
+  /// Finds and returns an object instance provided for a type [token].
+  ///
+  /// Unlike [provideType], `null` is returned if a provider is not found.
+  ///
+  /// A runtime assertion is thrown in debug mode if:
+  ///
+  /// * [T] is explicitly or implicitly bound to `dynamic`.
+  /// * If [T] is not `Object`, the DI [token] is not the *same* as [T].
+  T provideTypeOptional<T extends Object>(Type token) {
+    // See provideType.
+    assert(T != dynamic, 'Returning a dynamic is not supported');
+    return unsafeCast(get(token, null));
+  }
+
+  /// Finds and returns an object instance provided for a [token].
+  ///
+  /// An error is thrown if a provider is not found.
+  T provideToken<T>(OpaqueToken<T> token) {
+    return unsafeCast(get(token));
+  }
+
+  /// Finds and returns an object instance provided for a [token].
+  ///
+  /// Unlike [provideToken], `null` is returned if a provider is not found.
+  T provideTokenOptional<T>(OpaqueToken<T> token) {
+    return unsafeCast(get(token, null));
+  }
 }
 
 /// Annotates a method to generate an [Injector] factory at compile-time.
@@ -137,7 +175,6 @@ class GenerateInjector {
   const GenerateInjector(this._providersOrModules);
 
   /// Generate an [Injector] from [Module]s instead of untyped lists.
-  @experimental
   const factory GenerateInjector.fromModules(
     List<Module> modules,
   ) = GenerateInjector;

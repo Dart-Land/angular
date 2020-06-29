@@ -18,6 +18,7 @@ AbstractControl _find(AbstractControl control, List<String> path) {
   });
 }
 
+@optionalTypeArgs
 abstract class AbstractControl<T> {
   /// Indicates that a Control is valid, i.e. that no errors exist in the input
   /// value.
@@ -359,9 +360,10 @@ abstract class AbstractControl<T> {
   /// Set the value of the AbstractControl to `value`.
   ///
   /// If `onlySelf` is `true`, this change will only affect the validation of
-  /// this `Control` and not its parent component. If `emitEvent` is `true`,
-  /// this change will cause a `valueChanges` event on the `Control` to be
-  /// emitted. Both of these options default to `false`.
+  /// this `Control` and not its parent component. This defaults to `false`.
+  ///
+  /// If `emitEvent` is `true`, this change will cause a `valueChanges` event on
+  /// the `Control` to be emitted. This is the default behavior.
   ///
   /// If `emitModelToViewChange` is `true`, the view will be notified about the
   /// new value via an `onChange` event. This is the default behavior if
@@ -404,6 +406,7 @@ abstract class AbstractControl<T> {
 /// With [NgFormControl] or [NgFormModel] an existing [Control] can be
 /// bound to a DOM element instead. This `Control` can be configured with a
 /// custom validation function.
+@optionalTypeArgs
 class Control<T> extends AbstractControl<T> {
   Function _onChange;
   String _rawValue;
@@ -534,6 +537,7 @@ class ControlGroup extends AbstractControlGroup<Map<String, dynamic>> {
 
 /// Generic control group that allows creating your own group that is backed
 /// by a value that is not a Map.
+@optionalTypeArgs
 abstract class AbstractControlGroup<T> extends AbstractControl<T> {
   final Map<String, AbstractControl> controls;
 

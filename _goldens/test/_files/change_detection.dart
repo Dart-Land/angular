@@ -1,39 +1,9 @@
 import 'package:angular/angular.dart';
 
 @Component(
-  selector: 'CheckOnce',
-  template: '<div>CheckOnce</div>',
-  changeDetection: ChangeDetectionStrategy.CheckOnce,
-)
-class CheckOnceComponent {
-  @HostBinding('id')
-  String id;
-}
-
-@Component(
-  selector: 'Checked',
-  template: '<div>Checked</div>',
-  changeDetection: ChangeDetectionStrategy.Checked,
-)
-class CheckedComponent {}
-
-@Component(
-  selector: 'CheckAlways',
-  template: '<div>CheckAlways</div>',
-  changeDetection: ChangeDetectionStrategy.CheckAlways,
-)
-class CheckAlwaysComponent {}
-
-@Component(
-  selector: 'Detached',
-  template: '<div>Detached</div>',
-  changeDetection: ChangeDetectionStrategy.Detached,
-)
-class DetachedComponent {}
-
-@Component(
   selector: 'uses-cd-on-push',
   template: '<cd-on-push [name]="name"></cd-on-push>',
+  directives: [OnPushComponent],
 )
 class UsesOnPushComponent {
   String name;
@@ -61,15 +31,63 @@ class OnPushChildComponent {
 }
 
 @Component(
-  selector: 'Stateful',
+  selector: 'component-state',
   template: '<div>Stateful</div>',
-  changeDetection: ChangeDetectionStrategy.Stateful,
 )
-class StatefulComponent extends ComponentState {}
+class LegacyComponentState extends ComponentState {}
 
 @Component(
-  selector: 'Default',
+  selector: 'default',
   template: '<div>Default</div>',
-  changeDetection: ChangeDetectionStrategy.Default,
 )
 class DefaultComponent {}
+
+@Component(
+  selector: 'uses-ng-model',
+  directives: [
+    NgModelLike,
+  ],
+  template: '<input [(ngModel)]="value" />',
+)
+class UsesNgModelLike {
+  var value = 'Hello World';
+}
+
+@Directive(
+  selector: '[ngModel]:not([ngControl]):not([ngFormControl])',
+)
+class NgModelLike implements AfterChanges, OnInit {
+  @Output('ngModelChange')
+  Stream<void> get modelChange => const Stream.empty();
+
+  @Input('ngModel')
+  set model(Object ngModel) {}
+
+  @override
+  void ngAfterChanges() {}
+
+  @override
+  void ngOnInit() {}
+}
+
+@Component(
+  selector: 'uses-do-check-on-push',
+  template: '<cd-on-push-do-check [name]="name"></cd-on-push-do-check>',
+  directives: [DoCheckOnPushComponent],
+)
+class UsesDoCheckOnPushComponent {
+  String name;
+}
+
+@Component(
+  selector: 'cd-on-push-do-check',
+  template: 'Name: {{name}}',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+)
+class DoCheckOnPushComponent implements DoCheck {
+  @Input()
+  String name;
+
+  @override
+  void ngDoCheck() {}
+}

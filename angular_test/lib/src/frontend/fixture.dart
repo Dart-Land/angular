@@ -6,6 +6,7 @@ import 'dart:async';
 import 'dart:html';
 
 import 'package:angular/angular.dart';
+import 'package:angular/src/runtime.dart' show isDevMode;
 
 import 'bed.dart';
 import 'stabilizer.dart';
@@ -13,18 +14,18 @@ import 'stabilizer.dart';
 /// Inject a service for [tokenOrType] from [fixture].
 ///
 /// This is for compatibility reasons only and should not be used otherwise.
-T injectFromFixture<T>(NgTestFixture fixture, Object tokenOrType) {
+T injectFromFixture<T>(NgTestFixture<void> fixture, Object tokenOrType) {
   return fixture._rootComponentRef.injector.get(tokenOrType);
 }
 
 class NgTestFixture<T> {
   final ApplicationRef _applicationRef;
-  final ComponentRef _rootComponentRef;
+  final ComponentRef<T> _rootComponentRef;
   final NgTestStabilizer _testStabilizer;
 
   factory NgTestFixture(
     ApplicationRef applicationRef,
-    ComponentRef rootComponentRef,
+    ComponentRef<T> rootComponentRef,
     NgTestStabilizer testStabilizer,
   ) = NgTestFixture<T>._;
 
@@ -42,6 +43,9 @@ class NgTestFixture<T> {
     _rootComponentRef.destroy();
     _rootComponentRef.location.parent.remove();
     _applicationRef.dispose();
+    if (isDevMode) {
+      debugClearComponentStyles();
+    }
     activeTest = null;
   }
 
@@ -70,7 +74,7 @@ class NgTestFixture<T> {
     return _testStabilizer.stabilize(runAndTrackSideEffects: () {
       if (run != null) {
         Future<void>.sync(() {
-          run(_rootComponentRef.instance);
+          _rootComponentRef.update(run);
         });
       }
     });

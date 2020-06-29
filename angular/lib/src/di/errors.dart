@@ -1,3 +1,4 @@
+import 'package:meta/dart2js.dart' as dart2js;
 import 'package:angular/src/runtime.dart';
 
 /// Current stack of tokens being requested for an injection.
@@ -14,26 +15,26 @@ List<Object> _tokenStack;
 ///   return result;
 /// }
 /// ```
+@dart2js.tryInline
 void debugInjectorEnter(Object token) {
   // Tree-shake out in Dart2JS.
-  if (!isDevMode) {
-    return;
-  }
-  if (_tokenStack == null) {
-    _tokenStack = [token];
-  } else {
-    _tokenStack.add(token);
+  if (isDevMode) {
+    if (_tokenStack == null) {
+      _tokenStack = [token];
+    } else {
+      _tokenStack.add(token);
+    }
   }
 }
 
 /// In debug mode, trace leaving an injection lookup (successfully).
+@dart2js.tryInline
 void debugInjectorLeave(Object token) {
   // Tree-shake out in Dart2JS.
-  if (!isDevMode) {
-    return;
+  if (isDevMode) {
+    final removed = _tokenStack.removeLast();
+    assert(identical(removed, token));
   }
-  final removed = _tokenStack.removeLast();
-  assert(identical(removed, token));
 }
 
 /// Wraps invoking [wrap] with [debugInjectorEnter] and [debugInjectorLeave].
@@ -75,7 +76,7 @@ class NoProviderError extends InjectionError {
     if (input == null) {
       return const [];
     }
-    final output = [];
+    final output = <Object>[];
     var lastElement = Object();
     for (final element in input) {
       if (!identical(lastElement, element)) {
@@ -103,8 +104,8 @@ class NoProviderError extends InjectionError {
   String toString() => path.isEmpty
       ? _noProviderError(token)
       : _noProviderError(token) +
-          ': ${path.join(' -> ')} -> $token.\n'
-          '**NOTE**: This path is not exhaustive, and nodes may be missing '
-          'in between the "->" delimiters. There is ongoing work to improve '
-          'this error message and include all the nodes where possible. ';
+          ':\n  ${path.join(' ->\n  ')} ->\n  $token.\n'
+              '**NOTE**: This path is not exhaustive, and nodes may be missing '
+              'in between the "->" delimiters. There is ongoing work to improve '
+              'this error message and include all the nodes where possible. ';
 }

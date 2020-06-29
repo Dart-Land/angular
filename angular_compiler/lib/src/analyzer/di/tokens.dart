@@ -12,7 +12,35 @@ import '../types.dart';
 ///
 /// In AngularDart this is either an `OpaqueToken` or a `Type`.
 class TokenReader {
-  const TokenReader();
+  /// The set of `typedef`s that are allowed to be used as tokens.
+  final Set<TypeLink> allowedTypeDefs;
+
+  const TokenReader({this.allowedTypeDefs = const <TypeLink>{}});
+
+  /// Throws an error if [dartType] is a function-type not in [allowed].
+  static void assertNotFunctionType(
+    DartType dartType, {
+    @required Element on,
+    @required Set<TypeLink> allowed,
+  }) {
+    assert(on != null);
+    assert(allowed != null);
+    if (dartType is FunctionType) {
+      final toLink = linkTypeOf(dartType);
+      if (!allowed.contains(toLink)) {
+        final name = toLink.symbol;
+        final error = 'Unsupported token for injection: $name.\n\n'
+            'In previous versions of AngularDart it was valid to inject '
+            'based on a typedef or function type directly. However, in Dart '
+            '2.x+ typedefs and function types are canonicalized, and not '
+            'unique enough, making it easy to misuse.\n\n'
+            'Consider using an OpaqueToken with a description instead:\n'
+            '  typedef $name = Function(...);\n'
+            '  const ${name}Token = OpaqueToken<$name>(\'uniqueName\');';
+        BuildError.throwForElement(on, error);
+      }
+    }
+  }
 
   /// Returns [object] parsed into a [TokenElement].
   ///
@@ -20,13 +48,19 @@ class TokenReader {
   TokenElement parseTokenObject(DartObject object, [ParameterElement element]) {
     final constant = ConstantReader(object);
     if (constant.isNull) {
-      throw FormatException('Expected token, but got "null".');
+      final errorMsg = 'Annotation on element has errors and was unresolvable.';
+      if (element != null) {
+        BuildError.throwForElement(element, errorMsg);
+      }
+      throw FormatException(errorMsg);
     }
     if (constant.isType) {
-      return TypeTokenElement(linkTypeOf(constant.typeValue));
+      final typeValue = constant.typeValue;
+      // TODO: assertNotFunctionType.
+      return TypeTokenElement(linkTypeOf(typeValue));
     }
     if (constant.instanceOf($OpaqueToken)) {
-      return _parseOpaqueToken(constant);
+      return _parseOpaqueToken(constant, element);
     }
     final error =
         'Not a valid token for injection: $object. In previous versions of '
@@ -41,8 +75,8 @@ class TokenReader {
     throw BuildError(error);
   }
 
-  /// Returns [object] parsed into an [OpaqueTokenElement].
-  OpaqueTokenElement _parseOpaqueToken(ConstantReader constant) {
+  /// Returns [constant] parsed into an [OpaqueTokenElement].
+  OpaqueTokenElement _parseOpaqueToken(ConstantReader constant, [Element on]) {
     final value = constant.objectValue;
     final valueType = value.type;
     List<DartType> typeArgs;
@@ -55,8 +89,10 @@ class TokenReader {
     } else {
       typeArgs = valueType.typeArguments;
     }
+    final uniqueName = constant.read('_uniqueName').stringValue;
+
     return OpaqueTokenElement(
-      constant.read('_uniqueName').stringValue,
+      uniqueName,
       isMultiToken: constant.instanceOf($MultiToken),
       classUrl: linkToOpaqueToken(constant.objectValue.type),
       typeUrl: typeArgs.isNotEmpty ? linkTypeOf(typeArgs.first) : null,
@@ -96,14 +132,14 @@ class TokenReader {
       BuildError.throwForElement(
         type.element,
         ''
-            'A sub-type of OpaqueToken must have a single unnamed const '
-            'constructor with no parameters or type parameters. For example, '
-            'consider writing instead:\n'
-            '  class ${clazz.name} extends ${clazz.supertype.name} {\n'
-            '    const ${clazz.name}();\n'
-            '  }\n\n'
-            'We may loosten these restrictions in the future. See: '
-            'https://github.com/dart-lang/angular/issues/899',
+        'A sub-type of OpaqueToken must have a single unnamed const '
+        'constructor with no parameters or type parameters. For example, '
+        'consider writing instead:\n'
+        '  class ${clazz.name} extends ${clazz.supertype.name} {\n'
+        '    const ${clazz.name}();\n'
+        '  }\n\n'
+        'We may loosten these restrictions in the future. See: '
+        'https://github.com/dart-lang/angular/issues/899',
       );
     }
     if (!$OpaqueToken.isExactlyType(clazz.supertype) &&
@@ -111,11 +147,11 @@ class TokenReader {
       BuildError.throwForElement(
         type.element,
         ''
-            'A sub-type of OpaqueToken must directly extend OpaqueToken or '
-            'MultiToken, and cannot extend another class that in turn extends '
-            'OpaqueToken or MultiToken.\n\n'
-            'We may loosten these restrictions in the future. See: '
-            'https://github.com/dart-lang/angular/issues/899',
+        'A sub-type of OpaqueToken must directly extend OpaqueToken or '
+        'MultiToken, and cannot extend another class that in turn extends '
+        'OpaqueToken or MultiToken.\n\n'
+        'We may loosten these restrictions in the future. See: '
+        'https://github.com/dart-lang/angular/issues/899',
       );
     }
     return linkTypeOf(type);
@@ -129,7 +165,7 @@ class TokenReader {
         $Inject.firstAnnotationOfExact(element)?.getField('token') ??
             $OpaqueToken.firstAnnotationOf(element);
     return constTypeOrToken != null
-        ? parseTokenObject(constTypeOrToken)
+        ? parseTokenObject(constTypeOrToken, element)
         : parseTokenType(element);
   }
 
@@ -155,12 +191,11 @@ abstract class TokenElement {}
 /// A statically parsed `Type` used as an identifier for injection.
 class TypeTokenElement implements TokenElement {
   /// References the type `dynamic`.
-  static const TypeTokenElement $dynamic = _DynamicTypeElement();
+  static const TypeTokenElement $dynamic = TypeTokenElement(TypeLink.$dynamic);
 
   /// Canonical URL of the source location and class name being referenced.
   final TypeLink link;
 
-  @visibleForTesting
   const TypeTokenElement(this.link);
 
   @override
@@ -170,20 +205,10 @@ class TypeTokenElement implements TokenElement {
   int get hashCode => link.hashCode;
 
   /// Whether this is a considered the type `dynamic`.
-  bool get isDynamic => link == TypeLink.$dynamic;
+  bool get isDynamic => link.isDynamic;
 
   @override
   String toString() => 'TypeTokenElement {$link}';
-}
-
-class _DynamicTypeElement extends TypeTokenElement {
-  const _DynamicTypeElement() : super(null);
-
-  @override
-  TypeLink get link => TypeLink.$dynamic;
-
-  @override
-  bool get isDynamic => true;
 }
 
 /// A statically parsed `OpaqueToken` used as an identifier for injection.

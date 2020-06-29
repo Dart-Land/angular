@@ -293,24 +293,6 @@ void main() {
       );
     });
 
-    test('if a directive with bounded type parameters is typed', () async {
-      await compilesExpecting(
-        '''
-        @Component()
-        class GenericComponent<T extends num> {}
-        const typed = Typed<GenericComponent<int>>();
-
-        @typed
-        class Example {}
-        ''',
-        parseTyped,
-        errors: [
-          contains("Generic type arguments aren't supported for components and "
-              'directives with bounded type parameters.')
-        ],
-      );
-    });
-
     test('if "Typed" isn\'t applied to a directive', () async {
       await compilesExpecting(
         '''
@@ -324,6 +306,26 @@ void main() {
           contains(
               'Expected a "Typed" expression with a "Component" or "Directive" '
               'annotated type, but got "Typed<List>"')
+        ],
+      );
+    });
+
+    test('if a private type argument is used', () async {
+      await compilesExpecting(
+        '''
+        @Component()
+        class GenericComponent<T> {}
+        class _Private {}
+        const typed = Typed<GenericComponent<_Private>>();
+
+        @typed
+        class Example {}
+        ''',
+        parseTyped,
+        errors: [
+          contains(
+              'Directive type arguments must be public, but "GenericComponent" '
+              'was given private type argument "_Private" by "Example".')
         ],
       );
     });

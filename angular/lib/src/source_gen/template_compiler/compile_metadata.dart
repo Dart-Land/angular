@@ -6,6 +6,7 @@ import 'package:analyzer/dart/element/visitor.dart';
 import 'package:analyzer/src/dart/constant/value.dart';
 import 'package:analyzer/src/dart/element/element.dart';
 import 'package:analyzer/src/generated/utilities_dart.dart';
+import 'package:source_gen/source_gen.dart';
 import 'package:angular/src/compiler/compile_metadata.dart';
 import 'package:angular/src/compiler/output/convert.dart';
 import 'package:angular/src/compiler/output/output_ast.dart' as o;
@@ -17,8 +18,8 @@ import 'package:angular/src/source_gen/common/annotation_matcher.dart'
 import 'package:angular/src/source_gen/common/url_resolver.dart';
 import 'package:angular_compiler/angular_compiler.dart';
 import 'package:angular_compiler/cli.dart';
-import 'package:source_gen/source_gen.dart';
 
+import 'component_visitor_exceptions.dart';
 import 'dart_object_utils.dart' as dart_objects;
 import 'provider_inference.dart';
 
@@ -28,8 +29,11 @@ bool _isEmptyString(String s) => s == null || s.isEmpty;
 class CompileTypeMetadataVisitor
     extends SimpleElementVisitor<CompileTypeMetadata> {
   final LibraryReader _library;
+  final ComponentVisitorExceptionHandler _exceptionHandler;
+  final IndexedAnnotation _indexedAnnotation;
 
-  CompileTypeMetadataVisitor(this._library);
+  CompileTypeMetadataVisitor(
+      this._library, this._exceptionHandler, this._indexedAnnotation);
 
   @override
   CompileTypeMetadata visitClassElement(ClassElement element) {
@@ -88,8 +92,10 @@ class CompileTypeMetadataVisitor
     if (provider.toTypeValue() != null) {
       var element = provider.toTypeValue().element;
       if (element is! ClassElement) {
-        logWarning('Expected to find class in provider list, but instead '
-            'found $provider');
+        _exceptionHandler.handleWarning(ErrorMessageForAnnotation(
+            _indexedAnnotation,
+            'Expected to find class in provider list, but instead '
+            'found $provider'));
         return null;
       }
       var metadata = visitClassElement(element as ClassElement);
@@ -104,6 +110,11 @@ class CompileTypeMetadataVisitor
     }
 
     final token = dart_objects.getField(provider, 'token');
+    if (token == null) {
+      _exceptionHandler.handle(ErrorMessageForAnnotation(
+          _indexedAnnotation, 'A provider\'s token field failed to compile.'));
+      return null;
+    }
     final providerType = inferProviderType(provider, token);
     final providerTypeElement = providerType?.element;
     final providerTypeArgument = providerTypeElement is ClassElement
@@ -139,9 +150,11 @@ class CompileTypeMetadataVisitor
           enforceClassCanBeCreated: true,
         );
       } else {
-        throwFailure(
+        _exceptionHandler.handle(ErrorMessageForAnnotation(
+            _indexedAnnotation,
             'Provider.useClass can only be used with a class, but found '
-            '${type.element}');
+            '${type.element}'));
+        return null;
       }
     } else if (_hasNoUseValue(provider) && _notAnythingElse(provider)) {
       final typeValue = token.toTypeValue();
@@ -171,14 +184,19 @@ class CompileTypeMetadataVisitor
   CompileFactoryMetadata _getUseFactory(DartObject provider) {
     var maybeUseFactory = dart_objects.getField(provider, 'useFactory');
     if (!dart_objects.isNull(maybeUseFactory)) {
-      if (maybeUseFactory.type.element is FunctionTypedElement) {
+      var element = maybeUseFactory.toFunctionValue();
+      if (element != null) {
         return _factoryForFunction(
-          maybeUseFactory.type.element as FunctionTypedElement,
+          element,
           dart_objects.coerceList(provider, 'deps', defaultTo: null),
         );
       } else {
-        throwFailure('Provider.useFactory can only be used with a function, '
-            'but found ${maybeUseFactory.type.element}');
+        // NOTE: Since 'useFactory' is typed as a Function, this throw
+        // should not be accessible. [maybeUseFactory.type.element] will always
+        // be a [FunctionTypedElement].
+        throw StateError('Provider.useFactory must be a Function, but got '
+            'type ${maybeUseFactory.type} instead with type element '
+            '${maybeUseFactory.type.element}');
       }
     }
     return null;
@@ -196,12 +214,10 @@ class CompileTypeMetadataVisitor
   }) {
     final typeParameters = <o.TypeParameter>[];
     for (final typeParameter in element.typeParameters) {
-      if (typeParameter.bound != null) {
-        // TODO(b/111800117): generics with bounds aren't yet supported.
-        typeParameters.clear();
-        break;
-      }
-      typeParameters.add(o.TypeParameter(typeParameter.name));
+      typeParameters.add(o.TypeParameter(
+        typeParameter.name,
+        bound: fromDartType(typeParameter.bound, resolveBounds: false),
+      ));
     }
     return CompileTypeMetadata(
       moduleUrl: moduleUrl(element),
@@ -252,6 +268,7 @@ class CompileTypeMetadataVisitor
       List<ParameterElement> parameters, Element element) {
     List<CompileDiDependencyMetadata> deps = [];
     for (final param in parameters) {
+      // ignore: deprecated_member_use, no migration path
       if (param.parameterKind == ParameterKind.NAMED) {
         // No use being a warning, since this is not prohibited; just skip.
         continue;
@@ -264,14 +281,15 @@ class CompileTypeMetadataVisitor
   CompileDiDependencyMetadata _createCompileDiDependencyMetadata(
     ParameterElement p,
   ) {
+    final parameterInfo = ParameterInfo(p, _exceptionHandler);
     try {
       return CompileDiDependencyMetadata(
-        token: _getToken(p),
-        isAttribute: _hasAnnotation(p, Attribute),
-        isSelf: _hasAnnotation(p, Self),
-        isHost: _hasAnnotation(p, Host),
-        isSkipSelf: _hasAnnotation(p, SkipSelf),
-        isOptional: _hasAnnotation(p, Optional) || _isPositional(p),
+        token: _getToken(parameterInfo),
+        isAttribute: parameterInfo.isAttribute, //(p, Attribute),
+        isSelf: parameterInfo.isSelf,
+        isHost: parameterInfo.isHost,
+        isSkipSelf: parameterInfo.isSkipSelf,
+        isOptional: parameterInfo.isOptional || parameterInfo.isPositional,
       );
     } on ArgumentError catch (_) {
       // Handle cases where something is annotated with @Injectable() but does
@@ -284,30 +302,25 @@ class CompileTypeMetadataVisitor
     }
   }
 
-  CompileTokenMetadata _getToken(
-          ParameterElement p) =>
-      _hasAnnotation(p, Attribute)
-          ? _tokenForAttribute(p)
-          : _hasAnnotation(p, Inject)
-              ? _tokenForInject(p)
-              : $OpaqueToken.hasAnnotationOf(p)
-                  ? _tokenForOpaqueToken(p)
-                  : _tokenForType(p.type);
+  CompileTokenMetadata _getToken(ParameterInfo pI) => pI.isAttribute
+      ? _tokenForAttribute(pI)
+      : pI.isInject
+          ? _tokenForInject(pI)
+          : pI.isOpaqueToken
+              ? _tokenForOpaqueToken(pI)
+              : _tokenForType(pI.type);
 
-  CompileTokenMetadata _tokenForAttribute(ParameterElement p) =>
+  CompileTokenMetadata _tokenForAttribute(ParameterInfo pI) =>
       CompileTokenMetadata(
-          value: dart_objects.coerceString(
-              _getAnnotation(p, Attribute).constantValue, 'attributeName'));
+          value: dart_objects.coerceString(pI.attribute, 'attributeName'));
 
-  CompileTokenMetadata _tokenForInject(ParameterElement p) {
-    final annotation = _getAnnotation(p, Inject);
-    final injectToken = annotation.computeConstantValue();
-    final token = dart_objects.getField(injectToken, 'token');
-    return _token(token, annotation);
+  CompileTokenMetadata _tokenForInject(ParameterInfo pI) {
+    return _token(
+        dart_objects.getField(pI.injectValue, 'token'), pI.injectAnnotation);
   }
 
-  CompileTokenMetadata _tokenForOpaqueToken(ParameterElement p) {
-    final annotation = $OpaqueToken.firstAnnotationOf(p);
+  CompileTokenMetadata _tokenForOpaqueToken(ParameterInfo pI) {
+    final annotation = pI.opaqueToken;
     return _token(annotation);
   }
 
@@ -440,6 +453,8 @@ class CompileTypeMetadataVisitor
       return _expressionForProtobufEnum(token);
     } else if (token.type is InterfaceType) {
       return _expressionForType(token);
+    } else if (token.toFunctionValue() != null) {
+      return o.importExpr(_identifierForFunction(token.toFunctionValue()));
     } else if (token.type.element is FunctionTypedElement) {
       return o.importExpr(
           _identifierForFunction(token.type.element as FunctionTypedElement));
@@ -448,8 +463,8 @@ class CompileTypeMetadataVisitor
     }
   }
 
-  List<List> _toMapEntities(Map<DartObject, DartObject> tokens) {
-    final entities = <List>[];
+  List<List<Object>> _toMapEntities(Map<DartObject, DartObject> tokens) {
+    final entities = <List<Object>>[];
     for (DartObject key in tokens.keys) {
       entities
           .add([_useValueExpression(key), _useValueExpression(tokens[key])]);
@@ -563,13 +578,6 @@ class CompileTypeMetadataVisitor
   bool _isOpaqueToken(DartObject token) =>
       token != null && $OpaqueToken.isAssignableFromType(token.type);
 
-  ElementAnnotation _getAnnotation(Element element, Type type) =>
-      element.metadata.firstWhere(
-          (annotation) => annotation_matcher.matchAnnotation(type, annotation));
-
-  bool _hasAnnotation(Element element, Type type) => element.metadata.any(
-      (annotation) => annotation_matcher.matchAnnotation(type, annotation));
-
   o.Expression _expressionForEnum(DartObject token) {
     final field =
         _enumValues(token).singleWhere((field) => field.constantValue == token);
@@ -586,9 +594,6 @@ class CompileTypeMetadataVisitor
 
   bool _isEnum(ParameterizedType type) =>
       type is InterfaceType && type.element.isEnum;
-
-  bool _isPositional(ParameterElement param) =>
-      param.parameterKind == ParameterKind.POSITIONAL;
 
   bool _isProtobufEnum(ParameterizedType type) {
     return type is InterfaceType &&
@@ -611,4 +616,75 @@ class CompileTypeMetadataVisitor
 class _PrivateConstructorException extends Error {
   final String constructorName;
   _PrivateConstructorException(this.constructorName);
+}
+
+class ParameterInfo {
+  final ParameterElement _parameter;
+
+  DartObject attribute;
+  bool get isAttribute => attribute != null;
+  bool isSelf = false;
+  bool isHost = false;
+  bool isSkipSelf = false;
+  bool isOptional = false;
+
+  ElementAnnotation injectAnnotation;
+  DartObject injectValue;
+  bool get isInject => injectValue != null;
+
+  DartObject opaqueToken;
+  bool get isOpaqueToken => opaqueToken != null;
+
+  bool get isPositional =>
+      // ignore: deprecated_member_use, no migration path
+      _parameter.parameterKind == ParameterKind.POSITIONAL;
+
+  DartType get type => _parameter.type;
+
+  ParameterInfo(
+      this._parameter, ComponentVisitorExceptionHandler exceptionHandler) {
+    for (var annotationIndex = 0;
+        annotationIndex < _parameter.metadata.length;
+        annotationIndex++) {
+      final annotation = _parameter.metadata[annotationIndex];
+      final annotationValue = annotation.computeConstantValue();
+      final indexedAnnotation =
+          IndexedAnnotation(_parameter, annotation, annotationIndex);
+      if (annotation.constantEvaluationErrors.isNotEmpty) {
+        exceptionHandler.handle(AngularAnalysisError(
+            annotation.constantEvaluationErrors, indexedAnnotation));
+      } else if (annotationValue == null) {
+        exceptionHandler.handle(ErrorMessageForAnnotation(
+            indexedAnnotation, "Error evaluating annotation"));
+      } else {
+        _populateTypeInfo(annotationValue, annotation);
+      }
+    }
+  }
+
+  void _populateTypeInfo(
+      DartObject annotationValue, ElementAnnotation annotation) {
+    if (annotation_matcher.matchTypeExactly(Attribute, annotationValue)) {
+      attribute = annotationValue;
+    }
+    if (annotation_matcher.matchTypeExactly(Self, annotationValue)) {
+      isSelf = true;
+    }
+    if (annotation_matcher.matchTypeExactly(Host, annotationValue)) {
+      isHost = true;
+    }
+    if (annotation_matcher.matchTypeExactly(SkipSelf, annotationValue)) {
+      isSkipSelf = true;
+    }
+    if (annotation_matcher.matchTypeExactly(Optional, annotationValue)) {
+      isOptional = true;
+    }
+    if (annotation_matcher.isAssignableFrom(OpaqueToken, annotationValue)) {
+      opaqueToken = annotationValue;
+    }
+    if (annotation_matcher.matchTypeExactly(Inject, annotationValue)) {
+      injectValue = annotationValue;
+      injectAnnotation = annotation;
+    }
+  }
 }

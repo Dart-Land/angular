@@ -92,7 +92,7 @@ class SelectControlValueAccessor extends Object
 )
 class NgSelectOption implements OnDestroy {
   final OptionElement _element;
-  SelectControlValueAccessor _select;
+  final SelectControlValueAccessor _select;
   String id;
   NgSelectOption(HtmlElement element, @Optional() @Host() this._select)
       : _element = element as OptionElement {
@@ -120,8 +120,8 @@ class NgSelectOption implements OnDestroy {
   @override
   void ngOnDestroy() {
     if (_select != null) {
-      (_select._optionMap.containsKey(id) &&
-          (_select._optionMap.remove(id) != null || true));
+      _select._optionMap.containsKey(id) &&
+          (_select._optionMap.remove(id) != null || true);
       _select.writeValue(_select.value);
     }
   }

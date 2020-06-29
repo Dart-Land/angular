@@ -1,4 +1,4 @@
-import 'package:angular/di.dart' show PipeTransform, Pipe;
+import 'package:angular/core.dart' show PipeTransform, Pipe;
 
 import 'invalid_pipe_argument_exception.dart' show InvalidPipeArgumentException;
 
@@ -46,16 +46,16 @@ class ReplacePipe implements PipeTransform {
       throw InvalidPipeArgumentException(ReplacePipe, replacement);
     }
     // template fails with literal RegExp e.g /pattern/igm
-    if (replacement is _Matcher) {
+    if (replacement is String Function(Match)) {
       var rgxPattern =
           pattern is String ? RegExp(pattern) : (pattern as RegExp);
       return input.replaceAllMapped(rgxPattern, replacement);
     }
     if (pattern is RegExp) {
       // use the replaceAll variant
-      return input.replaceAll(pattern, (replacement as String));
+      return input.replaceAll(pattern, replacement as String);
     }
-    return input.replaceFirst((pattern as String), (replacement as String));
+    return input.replaceFirst(pattern as String, replacement as String);
   }
 
   bool _supportedInput(dynamic input) => input is String || input is num;
@@ -68,5 +68,3 @@ class ReplacePipe implements PipeTransform {
     return replacement is String || replacement is Function;
   }
 }
-
-typedef String _Matcher(Match _);

@@ -7,7 +7,7 @@ import 'metadata.dart';
 
 /// Creates an internationalized message from a bound [value] with [metadata].
 I18nMessage i18nMessageFromPropertyBinding(
-  AST value,
+  ASTWithSource value,
   I18nMetadata metadata,
   SourceSpan sourceSpan,
   TemplateContext templateContext,
@@ -15,7 +15,7 @@ I18nMessage i18nMessageFromPropertyBinding(
   final visitor = _I18nPropertyVisitor();
   final context = _I18nPropertyContext();
   try {
-    value.visit(visitor, context);
+    value.ast.visit(visitor, context);
     return context.build(metadata);
   } on _I18nPropertyException catch (e) {
     templateContext.reportError(e.message, sourceSpan);
@@ -53,11 +53,6 @@ class _I18nPropertyException implements Exception {
 class _I18nPropertyVisitor extends AstVisitor<void, _I18nPropertyContext> {
   @override
   void visitBinary(_, _I18nPropertyContext context) {
-    _reportInvalidBinding(context);
-  }
-
-  @override
-  void visitChain(_, _I18nPropertyContext context) {
     _reportInvalidBinding(context);
   }
 
@@ -108,11 +103,6 @@ class _I18nPropertyVisitor extends AstVisitor<void, _I18nPropertyContext> {
 
   @override
   void visitLiteralArray(_, _I18nPropertyContext context) {
-    _reportInvalidBinding(context);
-  }
-
-  @override
-  void visitLiteralMap(_, _I18nPropertyContext context) {
     _reportInvalidBinding(context);
   }
 

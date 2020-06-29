@@ -1,3 +1,23 @@
+## 0.5.11
+
+*   Maintenance release to support Dart 2.5 dev.
+
+## 0.5.10
+
+*   New `ThrowingTemplateAstVisitor` which throws by default in each visit
+    method.
+
+## 0.5.9
+
+*   Errors caused by parsing an invalid micro expression (i.e. `*ngFor`) are now
+    reported to the registered `ExceptionHandler` rather than thrown.
+
+## 0.5.8
+
+*   Fixed a type error that occurred when recovering from a missing closing
+    banana ')]'.
+
+## 0.5.7
 *   Annotations may now have compound names (for example `@foo.bar`).
 
 *   It is now an error to use `@deferred` on a `<template>` tag or combined with
@@ -8,6 +28,8 @@
 *   When parsing a failed micro expression (i.e. `*ngFor`), avoids a type error.
 
 *   `vellip` is now a recognized char.
+
+*   Whitespace inside preformatted text (`<pre>` tags) is now always preserved.
 
 ## 0.5.6
 

@@ -14,7 +14,7 @@ class ChangeDetectionPerfRecord {
 /// global variable accessible in the dev console.
 class AngularTools {
   final AngularProfiler profiler;
-  AngularTools(ComponentRef ref) : profiler = AngularProfiler(ref);
+  AngularTools(ComponentRef<Object> ref) : profiler = AngularProfiler(ref);
 }
 
 /// Entry point for all Angular profiling-related debug tools. This object
@@ -23,7 +23,8 @@ class AngularProfiler {
   final ApplicationRef appRef;
 
   // ignore: field_initializer_not_assignable
-  AngularProfiler(ComponentRef ref) : appRef = ref.injector.get(ApplicationRef);
+  AngularProfiler(ComponentRef<Object> ref)
+      : appRef = ref.injector.provideType(ApplicationRef);
 
   /// Exercises change detection in a loop and then prints the average amount of
   /// time in milliseconds how long a single round of change detection takes for
@@ -65,7 +66,7 @@ class AngularProfiler {
       //
 
       // https://developer.mozilla.org/en-US/docs/Web/API/Console/profileEnd
-      ((window.console.profileEnd as dynamic))(profileName);
+      (window.console.profileEnd as dynamic)(profileName);
     }
     var msPerTick = (end - start) / numTicks;
     print('ran $numTicks change detection cycles');

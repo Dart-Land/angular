@@ -142,7 +142,7 @@ class HumanizingTemplateAstVisitor
     StringBuffer context,
   ]) {
     context ??= StringBuffer();
-    context..write('<template');
+    context.write('<template');
     if (astNode.annotations.isNotEmpty) {
       context
         ..write(' ')
@@ -172,7 +172,7 @@ class HumanizingTemplateAstVisitor
     if (astNode.childNodes.isNotEmpty) {
       context.writeAll(astNode.childNodes.map((c) => c.accept(this)));
     }
-    context..write('</template>');
+    context.write('</template>');
     return context.toString();
   }
 
@@ -191,7 +191,7 @@ class HumanizingTemplateAstVisitor
   }
 
   @override
-  String visitExpression(ExpressionAst astNode, [_]) {
+  String visitExpression(ExpressionAst<Object> astNode, [_]) {
     // TODO: Restore once we have a working expression parser in this package.
     return '';
   }

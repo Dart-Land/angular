@@ -1,3 +1,4 @@
+import 'package:analyzer/dart/constant/value.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/src/dart/element/element.dart';
 import 'package:angular_compiler/cli.dart';
@@ -27,11 +28,6 @@ AnnotationMatcher safeMatcherType(
       (annotation) => matchAnnotation(type, annotation),
     );
 
-/// Creates a matcher that checks for [types], warning if an error is thrown.
-AnnotationMatcher safeMatcherTypes(Iterable<Type> types) => safeMatcher(
-      (annotation) => _matchTypes(types, annotation),
-    );
-
 /// Checks if an [ElementAnnotation] node implements [Component].
 bool isComponent(ElementAnnotation annotation) =>
     matchAnnotation(Component, annotation);
@@ -56,16 +52,17 @@ bool _matchTypes(Iterable<Type> types, ElementAnnotation annotation) =>
 /// annotation, otherwise an [ArgumentError] is thrown.
 bool matchAnnotation(Type type, ElementAnnotation annotation) {
   annotation.computeConstantValue();
+  // TODO(b/123715184) Surface the constantEvaluationErrors.
   try {
-    final checker = TypeChecker.fromRuntime(type);
-    final objectType = annotation.constantValue.type;
-    return checker.isExactlyType(objectType);
+    return matchTypeExactly(type, annotation.constantValue);
   } catch (_) {
     String message = ''
         'Could not determine type of annotation. It resolved to '
         '${annotation.computeConstantValue()}. '
         'Are you missing a dependency?';
-    if (annotation is ElementAnnotationImpl) {
+    if (annotation is ElementAnnotationImpl &&
+        annotation.annotationAst != null &&
+        annotation.librarySource != null) {
       message += ''
           '\n'
           '${annotation.annotationAst.toSource()} in '
@@ -78,6 +75,12 @@ bool matchAnnotation(Type type, ElementAnnotation annotation) {
     );
   }
 }
+
+bool matchTypeExactly(Type type, DartObject object) =>
+    TypeChecker.fromRuntime(type).isExactlyType(object.type);
+
+bool isAssignableFrom(Type type, DartObject object) =>
+    TypeChecker.fromRuntime(type).isAssignableFromType(object.type);
 
 /// Checks if an [ElementAnnotation] node matches specific [Type]s.
 typedef bool AnnotationMatcher(ElementAnnotation annotation);

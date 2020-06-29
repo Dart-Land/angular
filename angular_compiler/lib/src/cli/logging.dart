@@ -1,9 +1,11 @@
 import 'dart:async';
 
+import 'package:analyzer/src/generated/source.dart';
 import 'package:analyzer/dart/element/element.dart';
 // TODO(https://github.com/dart-lang/sdk/issues/32454):
 // ignore: implementation_imports
 import 'package:analyzer/src/dart/element/element.dart';
+import 'package:analyzer/source/line_info.dart';
 import 'package:build/build.dart' as build;
 import 'package:meta/meta.dart';
 import 'package:source_gen/source_gen.dart';
@@ -18,6 +20,7 @@ import 'messages.dart';
 Future<T> runBuildZoned<T>(
   Future<T> Function() fn, {
   bool showInternalTraces = false,
+  Map<Object, Object> zoneValues = const {},
 }) {
   final completer = Completer<T>.sync();
   runZoned(
@@ -45,7 +48,7 @@ Future<T> runBuildZoned<T>(
       } else {
         build.log.severe(
           'Unhandled exception in the AngularDart compiler!\n\n'
-              'Please report a bug: ${messages.urlFileBugs}',
+          'Please report a bug: ${messages.urlFileBugs}',
           e,
           s,
         );
@@ -55,10 +58,49 @@ Future<T> runBuildZoned<T>(
       }
     },
     zoneSpecification: ZoneSpecification(
-      print: (_, __, ___, line) => build.log.fine(line),
+      print: (_, __, ___, line) => build.log.info(line),
     ),
+    zoneValues: zoneValues,
   );
   return completer.future;
+}
+
+/// Creates a source span with line and column numbers.
+///
+/// If known to the caller, [lineInfo] should be provided to avoid the cost of
+/// recomputing it from [source].
+SourceSpan sourceSpanWithLineInfo(
+  int offset,
+  int length,
+  String source,
+  Uri uri, {
+  LineInfo lineInfo,
+}) {
+  lineInfo ??= LineInfo.fromContent(source);
+  var end = offset + length;
+  return SourceSpan(
+    _location(offset, uri, lineInfo),
+    _location(end, uri, lineInfo),
+    source.substring(offset, end),
+  );
+}
+
+/// Creates a SourceLocation with line and column numbers from [lineInfo].
+///
+/// This handles line and column number discrepancies between package:analyzer
+/// and package:source_span.
+SourceLocation _location(int offset, Uri uri, LineInfo lineInfo) {
+  final location = lineInfo.getLocation(offset);
+  return SourceLocation(
+    offset,
+    // Subtracting by one is necessary because `CharacterLocation` from
+    // package:analyzer returns one-based line and column numbers, while
+    // `SourceLocation` from package:source_span expects to be given
+    // zero-based line and column numbers.
+    line: location.lineNumber - 1,
+    column: location.columnNumber - 1,
+    sourceUrl: uri,
+  );
 }
 
 /// Base error type for all fatal errors encountered while compiling.
@@ -77,35 +119,26 @@ class BuildError extends Error {
   BuildError([this.message, Trace trace])
       : stackTrace = trace ?? Trace.current();
 
-  // TODO: Remove internal API once ElementAnnotation has source information.
-  // https://github.com/dart-lang/sdk/issues/32454
-  static SourceSpan _getSourceSpanFrom(ElementAnnotation annotation) {
-    final internals = annotation as ElementAnnotationImpl;
-    final astNode = internals.annotationAst;
-    final contents = annotation.source.contents.data;
-    final start = astNode.offset;
-    final end = start + astNode.length;
-    return SourceSpan(
-      SourceLocation(start, sourceUrl: annotation.source.uri),
-      SourceLocation(end, sourceUrl: annotation.source.uri),
-      contents.substring(start, end),
-    );
+  factory BuildError.multiple(Iterable<BuildError> errors, String message) {
+    return BuildError(
+        '$message:\n${errors.map((be) => be.toString()).join('\n')}');
   }
 
-  /// Throws a [BuildError] caused by analyzing the provided [annotation].
-  @alwaysThrows
-  static throwForAnnotation(
+  factory BuildError.forSourceSpan(SourceSpan sourceSpan, String message,
+      [Trace trace]) {
+    return BuildError(sourceSpan.message(message), trace);
+  }
+
+  factory BuildError.forAnnotation(
     ElementAnnotation annotation,
     String message, [
     Trace trace,
   ]) {
-    final sourceSpan = _getSourceSpanFrom(annotation);
-    throw BuildError(sourceSpan.message(message), trace);
+    return BuildError.forSourceSpan(
+        _getSourceSpanFrom(annotation), message, trace);
   }
 
-  /// Throws a [BuildError] caused by analyzing the provided [element].
-  @alwaysThrows
-  static throwForElement(
+  factory BuildError.forElement(
     Element element,
     String message, [
     Trace trace,
@@ -114,8 +147,11 @@ class BuildError extends Error {
     // https://github.com/dart-lang/angular/issues/902#issuecomment-366330965
     final source = element.source;
     if (source == null || source.contents.data.isEmpty) {
-      logWarning('Could not find source $element: the next error may be terse');
-      throw BuildError(message, trace);
+      final warning = source == null
+          ? 'No source text available for $element'
+          : 'No source text available for $element (${source.uri})';
+      logWarning('$warning: the next error may be terse');
+      return BuildError(message, trace);
     }
     final sourceUrl = source.uri;
     final sourceContents = source.contents.data;
@@ -127,7 +163,41 @@ class BuildError extends Error {
       element.nameOffset,
       element.nameLength + element.nameOffset,
     );
-    throw BuildError(sourceSpan.message(message), trace);
+    return BuildError.forSourceSpan(sourceSpan, message, trace);
+  }
+
+  // TODO: Remove internal API once ElementAnnotation has source information.
+  // https://github.com/dart-lang/sdk/issues/32454
+  static SourceSpan _getSourceSpanFrom(ElementAnnotation annotation) {
+    final annotationImpl = annotation as ElementAnnotationImpl;
+    final astNode = annotationImpl.annotationAst;
+    return sourceSpanWithLineInfo(
+      astNode.offset,
+      astNode.length,
+      annotation.source.contents.data,
+      annotation.source.uri,
+      lineInfo: annotationImpl.compilationUnit.lineInfo,
+    );
+  }
+
+  /// Throws a [BuildError] caused by analyzing the provided [annotation].
+  @alwaysThrows
+  static throwForAnnotation(
+    ElementAnnotation annotation,
+    String message, [
+    Trace trace,
+  ]) {
+    throw BuildError.forAnnotation(annotation, message, trace);
+  }
+
+  /// Throws a [BuildError] caused by analyzing the provided [element].
+  @alwaysThrows
+  static throwForElement(
+    Element element,
+    String message, [
+    Trace trace,
+  ]) {
+    throw BuildError.forElement(element, message, trace);
   }
 
   @override

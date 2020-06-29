@@ -27,7 +27,7 @@ void main() {
       c.anchor.click();
     });
     verify(platformLocation.pushState(any, any, '#/foo')).called(1);
-  }, skip: 'https://github.com/dart-lang/angular/issues/748');
+  });
 }
 
 PlatformLocation platformLocationFactory() => platformLocation;
@@ -36,7 +36,7 @@ class MockPlatformLocation extends Mock implements BrowserPlatformLocation {}
 
 @GenerateInjector([
   routerProvidersHash,
-  const FactoryProvider(PlatformLocation, platformLocationFactory),
+  FactoryProvider(PlatformLocation, platformLocationFactory),
 ])
 InjectorFactory injectorFactory = ng.injectorFactory$Injector;
 

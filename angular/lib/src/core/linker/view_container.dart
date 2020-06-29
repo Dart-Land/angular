@@ -1,16 +1,17 @@
 import 'dart:html';
 
+import 'package:meta/meta.dart';
 import 'package:angular/src/di/injector/injector.dart' show Injector;
 import 'package:angular/src/runtime.dart';
 
-import 'app_view.dart';
 import 'component_factory.dart' show ComponentFactory, ComponentRef;
 import 'component_loader.dart';
 import 'element_ref.dart';
 import 'template_ref.dart';
 import 'view_container_ref.dart';
-import 'view_ref.dart' show EmbeddedViewRef, ViewRef, ViewRefImpl;
-import 'view_type.dart';
+import 'view_ref.dart' show EmbeddedViewRef, ViewRef;
+import 'views/dynamic_view.dart';
+import 'views/view.dart';
 
 /// A container providing an insertion point for attaching children.
 ///
@@ -19,28 +20,32 @@ import 'view_type.dart';
 class ViewContainer extends ComponentLoader implements ViewContainerRef {
   final int index;
   final int parentIndex;
-  final AppView parentView;
+  final View parentView;
   final Node nativeElement;
-  List<AppView> nestedViews;
-  ElementRef _elementRef;
-  Injector _parentInjector;
+
+  List<DynamicView> nestedViews;
 
   ViewContainer(
-      this.index, this.parentIndex, this.parentView, this.nativeElement);
+    this.index,
+    this.parentIndex,
+    this.parentView,
+    this.nativeElement,
+  );
 
-  ElementRef get elementRef => _elementRef ??= ElementRef(nativeElement);
+  @Deprecated('Use .nativeElement instead')
+  ElementRef get elementRef => ElementRef(nativeElement);
 
   /// Returns the [ViewRef] for the View located in this container at the
   /// specified index.
   @override
-  EmbeddedViewRef get(int index) {
-    return nestedViews[index].viewData.ref;
+  ViewRef get(int index) {
+    return nestedViews[index];
   }
 
   /// The number of Views currently attached to this container.
   @override
   int get length {
-    var nested = nestedViews;
+    final nested = nestedViews;
     return nested == null ? 0 : nested.length;
   }
 
@@ -50,25 +55,39 @@ class ViewContainer extends ComponentLoader implements ViewContainerRef {
   ElementRef get element => elementRef;
 
   @override
-  Injector get parentInjector =>
-      _parentInjector ??= parentView.injector(parentIndex);
+  Injector get parentInjector => parentView.injector(parentIndex);
 
   @override
   Injector get injector => parentView.injector(index);
 
+  @experimental
+  void detectChangesInCheckAlwaysViews() {
+    final nested = nestedViews;
+    if (nested == null) {
+      return;
+    }
+    for (var i = 0, len = nested.length; i < len; i++) {
+      nested[i].detectChangesInCheckAlwaysViews();
+    }
+  }
+
   void detectChangesInNestedViews() {
-    var _nestedViews = nestedViews;
-    if (_nestedViews == null) return;
-    for (var i = 0, len = _nestedViews.length; i < len; i++) {
-      _nestedViews[i].detectChanges();
+    final nested = nestedViews;
+    if (nested == null) {
+      return;
+    }
+    for (var i = 0, len = nested.length; i < len; i++) {
+      nested[i].detectChanges();
     }
   }
 
   void destroyNestedViews() {
-    var _nestedViews = nestedViews;
-    if (_nestedViews == null) return;
-    for (var i = 0, len = _nestedViews.length; i < len; i++) {
-      _nestedViews[i].destroy();
+    final nested = nestedViews;
+    if (nested == null) {
+      return;
+    }
+    for (var i = 0, len = nested.length; i < len; i++) {
+      nested[i].destroyInternalState();
     }
   }
 
@@ -81,7 +100,7 @@ class ViewContainer extends ComponentLoader implements ViewContainerRef {
   /// Returns the [ViewRef] for the newly created View.
   @override
   EmbeddedViewRef insertEmbeddedView(TemplateRef templateRef, int index) {
-    EmbeddedViewRef viewRef = templateRef.createEmbeddedView();
+    final viewRef = templateRef.createEmbeddedView();
     insert(viewRef, index);
     return viewRef;
   }
@@ -90,8 +109,8 @@ class ViewContainer extends ComponentLoader implements ViewContainerRef {
   /// and appends it into this container.
   @override
   EmbeddedViewRef createEmbeddedView(TemplateRef templateRef) {
-    EmbeddedViewRef viewRef = templateRef.createEmbeddedView();
-    attachView((viewRef as ViewRefImpl).appView, length);
+    final viewRef = templateRef.createEmbeddedView();
+    attachView(unsafeCast(viewRef), length);
     return viewRef;
   }
 
@@ -101,34 +120,39 @@ class ViewContainer extends ComponentLoader implements ViewContainerRef {
     Injector injector,
     List<List<dynamic>> projectableNodes,
   ]) {
-    var contextInjector = injector ?? parentInjector;
-    var componentRef =
-        componentFactory.create(contextInjector, projectableNodes);
+    final contextInjector = injector ?? parentInjector;
+    final componentRef = componentFactory.create(
+      contextInjector,
+      projectableNodes,
+    );
     insert(componentRef.hostView, index);
     return componentRef;
   }
 
   @override
   ViewRef insert(ViewRef viewRef, [int index = -1]) {
-    if (index == -1) index = this.length;
-    var viewRef_ = (viewRef as ViewRefImpl);
-    attachView(viewRef_.appView, index);
+    if (index == -1) {
+      index = length;
+    }
+    attachView(unsafeCast(viewRef), index);
     return viewRef;
   }
 
   @override
   ViewRef move(ViewRef viewRef, int currentIndex) {
-    if (currentIndex == -1) return null;
-    var viewRef_ = viewRef as ViewRefImpl;
-    moveView(viewRef_.appView, currentIndex);
-    return viewRef_;
+    if (currentIndex == -1) {
+      return null;
+    }
+    moveView(unsafeCast(viewRef), currentIndex);
+    return viewRef;
   }
 
   /// Returns the index of the View, specified via [ViewRef], within the current
   /// container or `-1` if this container doesn't contain the View.
   @override
-  int indexOf(ViewRef viewRef) =>
-      nestedViews.indexOf((viewRef as ViewRefImpl).appView);
+  int indexOf(ViewRef viewRef) {
+    return nestedViews.indexOf(unsafeCast(viewRef));
+  }
 
   /// Destroys a View attached to this container at the specified `index`.
   ///
@@ -137,9 +161,10 @@ class ViewContainer extends ComponentLoader implements ViewContainerRef {
   /// TODO(i): rename to destroy
   @override
   void remove([int index = -1]) {
-    if (index == -1) index = this.length - 1;
-    var view = detachView(index);
-    view.destroy();
+    if (index == -1) {
+      index = length - 1;
+    }
+    detachView(index).destroyInternalState();
   }
 
   /// Use along with [#insert] to move a View within the current container.
@@ -148,22 +173,26 @@ class ViewContainer extends ComponentLoader implements ViewContainerRef {
   /// TODO(i): refactor insert+remove into move
   @override
   ViewRef detach([int index = -1]) {
-    if (index == -1) index = this.length - 1;
-    return detachView(index).viewData.ref;
+    if (index == -1) {
+      index = length - 1;
+    }
+    return detachView(index);
   }
 
   /// Destroys all Views in this container.
   @override
   void clear() {
-    for (var i = this.length - 1; i >= 0; i--) {
+    for (var i = length - 1; i >= 0; i--) {
       remove(i);
     }
   }
 
-  List<T> mapNestedViews<T, U extends AppView>(List<T> Function(U) callback) {
+  List<T> mapNestedViews<T, U extends DynamicView>(
+    List<T> Function(U) callback,
+  ) {
     final nestedViews = this.nestedViews;
     if (nestedViews == null || nestedViews.isEmpty) {
-      return const [];
+      return const <Null>[];
     }
     final result = <T>[];
     for (var i = 0, l = nestedViews.length; i < l; i++) {
@@ -172,69 +201,46 @@ class ViewContainer extends ComponentLoader implements ViewContainerRef {
     return result;
   }
 
-  void moveView(AppView view, int currentIndex) {
-    List<AppView> views = nestedViews;
+  Node _findRenderNode(List<DynamicView> views, int index) {
+    return index > 0
+        ? views[index - 1].viewFragment.findLastDomNode()
+        : nativeElement;
+  }
 
-    int previousIndex = views.indexOf(view);
-
-    if (view.viewData.type == ViewType.component) {
-      throw Exception("Component views can't be moved!");
-    }
-
-    if (views == null) {
-      views = <AppView>[];
-      nestedViews = views;
-    }
+  void moveView(DynamicView view, int currentIndex) {
+    final views = nestedViews;
+    final previousIndex = views.indexOf(view);
 
     views.removeAt(previousIndex);
     views.insert(currentIndex, view);
-    Node refRenderNode;
 
-    if (currentIndex > 0) {
-      AppView prevView = views[currentIndex - 1];
-      refRenderNode = prevView.lastRootNode;
-    } else {
-      refRenderNode = nativeElement;
-    }
+    final refRenderNode = _findRenderNode(views, currentIndex);
 
     if (refRenderNode != null) {
-      view.attachViewAfter(refRenderNode, view.flatRootNodes);
+      view.addRootNodesAfter(refRenderNode);
     }
 
-    view.markContentChildAsMoved(this);
+    view.wasMoved();
   }
 
-  void attachView(AppView view, int viewIndex) {
-    if (identical(view.viewData.type, ViewType.component)) {
-      throw StateError("Component views can't be moved!");
-    }
-    var _nestedViews = nestedViews ?? <AppView>[];
-    _nestedViews.insert(viewIndex, view);
-    Node refRenderNode;
-    if (viewIndex > 0) {
-      var prevView = _nestedViews[viewIndex - 1];
-      refRenderNode = prevView.lastRootNode;
-    } else {
-      refRenderNode = nativeElement;
-    }
-    nestedViews = _nestedViews;
+  void attachView(DynamicView view, int viewIndex) {
+    final views = nestedViews ?? <DynamicView>[];
+    views.insert(viewIndex, view);
+
+    final refRenderNode = _findRenderNode(views, viewIndex);
+    nestedViews = views;
+
     if (refRenderNode != null) {
-      view.attachViewAfter(refRenderNode, view.flatRootNodes);
+      view.addRootNodesAfter(refRenderNode);
     }
-    view.addToContentChildren(this);
+
+    view.wasInserted(this);
   }
 
-  AppView detachView(int viewIndex) {
-    var view = nestedViews.removeAt(viewIndex);
-    if (view.viewData.type == ViewType.component) {
-      throw StateError("Component views can't be moved!");
-    }
-    view.detachViewNodes(view.flatRootNodes);
-    if (view.inlinedNodes != null) {
-      view.detachViewNodes(view.inlinedNodes);
-    }
-    view.removeFromContentChildren(this);
-    return view;
+  DynamicView detachView(int viewIndex) {
+    return nestedViews.removeAt(viewIndex)
+      ..removeRootNodes()
+      ..wasRemoved();
   }
 
   @override

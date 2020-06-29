@@ -71,5 +71,26 @@ class InterpolationLiterals {}
   ''',
 )
 class InterpolationLocals {
+  final bars = [
+    [1],
+    [2],
+    [3, 4]
+  ];
   String callMethod(Object input) => input.toString();
+}
+
+// Demonstrates multiple interpolations and whitespace stripping.
+@Component(selector: 'attribute', template: '''
+    <img alt="\n{{altText}}\n">
+    <img alt="\n{{altText}}\n{{altText}}\n">''')
+class Attribute {
+  var altText = 'Text';
+}
+
+// Demonstrates multiple interpolations and whitespace preservation.
+@Component(selector: 'attribute', preserveWhitespace: true, template: '''
+    <img alt="\n{{altText}}\n">
+    <img alt="\n{{altText}}\n{{altText}}\n">''')
+class AttributePW {
+  var altText = 'Text';
 }

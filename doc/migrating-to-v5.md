@@ -35,9 +35,9 @@ Add or update the build_runner related dependencies to your `pubspec.yaml`.
 
 ```yaml
 dev_dependencies:
-  build_runner: ^0.9.0
+  build_runner: ^1.0.0
   build_test: ^0.10.2
-  build_web_compilers: ^0.4.0
+  build_web_compilers: ^1.0.0
 ```
 
 > Notice: It's no longer required to use a separate tool/build.dart in case
@@ -51,7 +51,7 @@ configuration. The directory will contain the generated results of the
 `build_runner`.
 
 > Notice: When developing in Intellij/WebStorm it's currently also recommended
-> to mark the directory as excluded as itwill constantly change and cause
+> to mark the directory as excluded as it will constantly change and cause
 > Intellij to reanalyze the code frequently, which results in a loss of
 > performance.
 
@@ -154,7 +154,7 @@ void main() {
 }
 ```
 
-When using `runApp` it's possible to enable `angular_compiler` settings, which
+When using `runApp()` it's possible to enable `angular_compiler` settings, which
 will reduce the DDC load times during development, by adding the following lines
 to the `build.yaml`:
 
@@ -168,7 +168,7 @@ global_options:
 
 For further information about best practices for the dependency injector see
 [Effective AngularDart: Dependency
-Injection](https://github.com/dart-lang/angular/blob/master/doc/effective/di.md#injectors).
+Injection](https://github.com/dart-lang/angular/blob/master/doc/effective/dependency-injection.md#injectors).
 
 ### Refactor providers to use typed variant
 
@@ -217,7 +217,7 @@ equivalents to `provide` and `const Provider`.
 
 This of course also applies to the setup of an `Injector` within `main.dart`.
 For further information about providers see [Effective AngularDart: Dependency
-Injection](https://github.com/dart-lang/angular/blob/master/doc/effective/di.md#providers).
+Injection](https://github.com/dart-lang/angular/blob/master/doc/effective/dependency-injection.md#providers).
 
 ### Adjust deferred loaded components
 

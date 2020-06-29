@@ -1,128 +1,86 @@
 import 'dart:html';
 
-import 'package:angular/src/core/change_detection/constants.dart'
-    show ChangeDetectionStrategy;
-
-import '../change_detection/change_detector_ref.dart' show ChangeDetectorRef;
-import 'app_view.dart' show AppView;
-import 'app_view_utils.dart';
-
+/// An Angular view that can be created and destroyed dynamically.
+///
+/// A view is the fundamental building block of an Angular app. It's the
+/// smallest grouping of HTML elements that are created and destroyed together.
+///
+/// The properties of elements in a view can change, but their structure (order
+/// and number) can't. Changing the structure of elements can only be done by
+/// inserting, moving, or removing instances of [ViewRef] in a view container
+/// via `ViewContainerRef`. A view may contain any number of view containers.
+///
+/// This is the public interface which all dynamic views implement.
 abstract class ViewRef {
+  /// Whether this view has been destroyed.
   bool get destroyed;
 
+  /// Registers a [callback] to invoke when this view is destroyed.
   void onDestroy(void Function() callback);
 }
 
-/// Represents an Angular View.
+/// An embedded Angular view that can be created and destroyed dynamically.
 ///
-/// A View is a fundamental building block of the application UI. It is the
-/// smallest grouping of Elements which are created and destroyed together.
+/// An embedded view is instantiated from a `TemplateRef`, and can be inserted
+/// into a `ViewContainerRef`.
 ///
-/// Properties of elements in a View can change, but the structure (number
-/// and order) of elements in a View cannot. Changing the structure of Elements
-/// can only be done by inserting, moving or removing nested Views via a
-/// [ViewContainerRef]. Each View can contain many View Containers.
+/// This is the public interface which only generated embedded views implement.
+/// It adds additional functionality to [ViewRef] that is specific to embedded
+/// views, such as manipulating template local variables.
 ///
 /// ### Example
 ///
-/// Given this template...
+/// Consider the following template:
 ///
-///     Count: {{items.length}}
-///     <ul>
-///       <li///ngFor="let  item of items">{{item}}</li>
-///     </ul>
-///
-///     ... we have two [EmbeddedViewRef]s:
-///
-///     Outer [EmbeddedViewRef]:
-///     Count: {{items.length}}
-///     <ul>
-///       <template ngFor let-item [ngForOf]="items"></template>
-///     </ul>
-///
-///     Inner [EmbeddedViewRef]:
-///       <li>{{item}}</li>
-///
-/// Notice that the original template is broken down into two separate
-/// [EmbeddedViewRef]s.
-///
-/// The outer/inner [EmbeddedViewRef]s are then assembled into views like so:
-///
-/// <!-- ViewRef: outer-0 -->
-/// Count: 2
+/// ```
 /// <ul>
-///   <template view-container-ref></template>
-///   <!-- ViewRef: inner-1 --><li>first</li><!-- /ViewRef: inner-1 -->
-///   <!-- ViewRef: inner-2 --><li>second</li><!-- /ViewRef: inner-2 -->
+///   <li *ngFor="let item of items">{{item}}</li>
 /// </ul>
-/// <!-- /ViewRef: outer-0 -->
+/// ```
 ///
-abstract class EmbeddedViewRef extends ViewRef {
-  /// Sets [value] of local variable called [variableName] in this View.
-  void setLocal(String variableName, dynamic value);
+/// Note the `*`-binding is just sugar for the following:
+///
+/// ```
+/// <ul>
+///   <template ngFor let-item [ngForOf]="items">
+///     <!-- TemplateRef -->
+///     <li>{{item}}</li>
+///   </template>
+/// </ul>
+/// ```
+///
+/// In this example, `item` is a template input variable that is local to each
+/// embedded view created from this template.
+///
+/// Given `items = ['First', 'Second']`, this example would render:
+///
+/// ```
+/// <ul>
+///   <!-- EmbeddedViewRef -->
+///   <li>First</li>
+///   <!-- EmbeddedViewRef -->
+///   <li>Second</li>
+/// </ul>
+/// ```
+///
+/// Note how `ngFor` has used the `TemplateRef` to create an `EmbeddedViewRef`
+/// for each item.
+abstract class EmbeddedViewRef implements ViewRef {
+  /// Sets the [value] of local variable called [name] in this view.
+  ///
+  /// This local variable will be assignable by [name] to a template input
+  /// variable created with the `let` keyword.
+  void setLocal(String name, dynamic value);
 
-  /// Checks whether this view has a local variable called [variableName].
-  bool hasLocal(String variableName);
+  /// Checks whether this view has a local variable called [name].
+  bool hasLocal(String name);
 
+  /// This view's root DOM nodes.
   List<Node> get rootNodes;
 
-  /// Destroys the view and all of the data structures associated with it.
+  /// Detaches this view and destroys all of its associated state.
   void destroy();
 
-  /// Marks the node for change detection.
+  /// Marks this view to be change detected in an "OnPush" context.
   void markForCheck();
-}
-
-class ViewRefImpl implements EmbeddedViewRef, ChangeDetectorRef {
-  final AppView appView;
-
-  ViewRefImpl(this.appView);
-
-  @Deprecated('Use appView instead')
-  AppView<dynamic> get internalView => appView;
-
-  List<Node> get rootNodes => appView.flatRootNodes;
-
-  ChangeDetectorRef get changeDetectorRef => this;
-
-  void setLocal(String variableName, dynamic value) {
-    appView.setLocal(variableName, value);
-  }
-
-  bool hasLocal(String variableName) => appView.hasLocal(variableName);
-
-  bool get destroyed => appView.viewData.destroyed;
-
-  @override
-  void markForCheck() {
-    appView.markPathToRootAsCheckOnce();
-  }
-
-  void detach() {
-    appView.cdMode = ChangeDetectionStrategy.Detached;
-  }
-
-  void detectChanges() {
-    appView.detectChanges();
-  }
-
-  void checkNoChanges() {
-    AppViewUtils.enterThrowOnChanges();
-    appView.detectChanges();
-    AppViewUtils.exitThrowOnChanges();
-  }
-
-  void reattach() {
-    appView.cdMode = ChangeDetectionStrategy.CheckAlways;
-    markForCheck();
-  }
-
-  @override
-  void onDestroy(void Function() callback) {
-    appView.addOnDestroyCallback(callback);
-  }
-
-  void destroy() {
-    appView.detachAndDestroy();
-  }
 }

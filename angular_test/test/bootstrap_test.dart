@@ -91,7 +91,7 @@ void main() {
     final test = await bootstrapForTest(ng_generated.AddProvidersNgFactory,
         host, ([i]) => Injector.map({TestService: TestService()}, i),
         beforeComponentCreated: (injector) =>
-            new Future.delayed(Duration(milliseconds: 200), () {}).then((_) {
+            Future.delayed(Duration(milliseconds: 200), () {}).then((_) {
               testService = injector.get(TestService);
               testService.count++;
             }),
@@ -106,17 +106,6 @@ void main() {
     expect(testService.count, 1);
     test.destroy();
   });
-
-  test('should throw if the root component is OnPush', () async {
-    expect(
-      bootstrapForTest(
-        ng_generated.OnPushComponentNgFactory,
-        DivElement(),
-        _noopInjector,
-      ),
-      throwsUnsupportedError,
-    );
-  }, skip: 'See https://github.com/dart-lang/angular2/issues/329');
 }
 
 @Component(
@@ -148,17 +137,3 @@ class AddProviders {
 class TestService {
   int count = 0;
 }
-
-@Component(
-  selector: 'test',
-  template: '{{"Hello World"}}',
-  changeDetection: ChangeDetectionStrategy.OnPush,
-)
-class OnPushComponent {}
-
-@Component(
-  selector: 'test',
-  template: '',
-  changeDetection: ChangeDetectionStrategy.Stateful,
-)
-class XXXComponent extends ComponentState {}

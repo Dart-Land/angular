@@ -48,7 +48,7 @@ void main() {
           throwsNoProviderError,
         );
         expect(
-          () => i.inject(ExampleService),
+          () => i.provideType<ExampleService>(ExampleService),
           throwsNoProviderError,
         );
         expect(
@@ -94,23 +94,23 @@ void main() {
       test('should use orElse if provided', () {
         i = Injector.empty();
         expect(i.get(ExampleService, 123), 123);
-        expect(i.injectOptionalUntyped(ExampleService, 123), 123);
         expect(i.injectFromSelfOptional(ExampleService, 123), 123);
         expect(i.injectFromAncestryOptional(ExampleService, 123), 123);
         expect(i.injectFromParentOptional(ExampleService, 123), 123);
       });
 
       test('should fallback to the parent injector if provided', () {
-        final parent = Injector.map({ExampleService: 123});
+        final instance = ExampleService();
+        final parent = Injector.map({ExampleService: instance});
         i = Injector.empty(parent);
-        expect(i.get(ExampleService), 123);
-        expect(i.inject(ExampleService), 123);
+        expect(i.get(ExampleService), instance);
+        expect(i.provideType<ExampleService>(ExampleService), instance);
         expect(
           () => i.injectFromSelf(ExampleService),
           throwsNoProviderError,
         );
-        expect(i.injectFromAncestry(ExampleService), 123);
-        expect(i.injectFromParent(ExampleService), 123);
+        expect(i.injectFromAncestry(ExampleService), instance);
+        expect(i.injectFromParent(ExampleService), instance);
       });
 
       test('should return itself if Injector is passed', () {
@@ -123,10 +123,11 @@ void main() {
       HierarchicalInjector i;
 
       test('should return a provided key-value pair', () {
-        i = Injector.map({ExampleService: 123});
-        expect(i.get(ExampleService), 123);
-        expect(i.inject(ExampleService), 123);
-        expect(i.injectFromSelf(ExampleService), 123);
+        final instance = ExampleService();
+        i = Injector.map({ExampleService: instance});
+        expect(i.get(ExampleService), instance);
+        expect(i.provideType<ExampleService>(ExampleService), instance);
+        expect(i.injectFromSelf(ExampleService), instance);
         expect(
           () => i.injectFromAncestry(ExampleService),
           throwsNoProviderError,
@@ -167,21 +168,21 @@ void main() {
 
       test('should resolve a Type', () {
         i = ReflectiveInjector.resolveAndCreate([ExampleService]);
-        expect(i.get(ExampleService), const isInstanceOf<ExampleService>());
+        expect(i.get(ExampleService), const TypeMatcher<ExampleService>());
       });
 
       test('should resolve a Provider', () {
         i = ReflectiveInjector.resolveAndCreate([
           Provider(ExampleService),
         ]);
-        expect(i.get(ExampleService), const isInstanceOf<ExampleService>());
+        expect(i.get(ExampleService), const TypeMatcher<ExampleService>());
       });
 
       test('should resolve a Provider.useClass', () {
         i = ReflectiveInjector.resolveAndCreate([
           Provider(ExampleService, useClass: ExampleService2),
         ]);
-        expect(i.get(ExampleService), const isInstanceOf<ExampleService2>());
+        expect(i.get(ExampleService), const TypeMatcher<ExampleService2>());
       });
 
       test('should resolve a Provider.useValue', () {
@@ -196,7 +197,7 @@ void main() {
         i = ReflectiveInjector.resolveAndCreate([
           Provider(ExampleService, useFactory: createExampleService),
         ]);
-        expect(i.get(ExampleService), const isInstanceOf<ExampleService>());
+        expect(i.get(ExampleService), const TypeMatcher<ExampleService>());
       });
 
       test('should resolve a Provider.useFactory with deps', () {
@@ -294,7 +295,7 @@ void main() {
             multi: true,
           ),
         ]);
-        expect(injector.get(usPresidents), const isInstanceOf<List<String>>());
+        expect(injector.get(usPresidents), const TypeMatcher<List<String>>());
       });
 
       test('should support MultiToken instead of multi: true', () {
@@ -305,7 +306,7 @@ void main() {
         ]);
         expect(
           injector.get(usPresidentsMulti),
-          const isInstanceOf<List<String>>(),
+          const TypeMatcher<List<String>>(),
         );
       });
 
@@ -333,7 +334,7 @@ void main() {
         ]);
         expect(
           injector.get(ExampleService),
-          const isInstanceOf<ExampleService>(),
+          const TypeMatcher<ExampleService>(),
         );
       });
 
@@ -371,8 +372,8 @@ void main() {
           throwsA(
             predicate(
               (e) => '$e'.contains(''
-                  'No provider found for $ExampleService2: '
-                  '$ExampleService -> $ExampleService2.'),
+                  'No provider found for $ExampleService2:\n  '
+                  '$ExampleService ->\n  $ExampleService2.'),
             ),
           ),
         );
@@ -405,8 +406,9 @@ void main() {
           throwsA(
             predicate(
               (e) => '$e'.contains(''
-                  'No provider found for $ExampleService4: '
-                  '$ExampleService -> $ExampleService2 -> $ExampleService4.'),
+                  'No provider found for $ExampleService4:\n  '
+                  '$ExampleService ->\n  $ExampleService2 ->\n  '
+                  '$ExampleService4.'),
             ),
           ),
         );
@@ -449,7 +451,7 @@ void main() {
         ]);
         expect(
           injector.get(ExampleService),
-          const isInstanceOf<ExampleService2>(),
+          const TypeMatcher<ExampleService2>(),
         );
       });
     });
@@ -460,14 +462,14 @@ void main() {
       test('should consider Provider(T) as Provider(T, useClass: T)', () {
         expect(
           injector.get(ExampleService2),
-          const isInstanceOf<ExampleService2>(),
+          const TypeMatcher<ExampleService2>(),
         );
       });
 
       test('should support "useClass"', () {
         expect(
           injector.get(ExampleService),
-          const isInstanceOf<ExampleService2>(),
+          const TypeMatcher<ExampleService2>(),
         );
       });
 
@@ -489,7 +491,7 @@ void main() {
         final result = injector.get(multiStringToken);
         expect(
           result,
-          const isInstanceOf<List<String>>(),
+          const TypeMatcher<List<String>>(),
           reason: 'List<String> expected, got $result of ${result.runtimeType}',
         );
         expect(result, ['A', 'B']);
@@ -499,7 +501,7 @@ void main() {
         final result = injector.get(const CustomMultiString());
         expect(
           result,
-          const isInstanceOf<List<String>>(),
+          const TypeMatcher<List<String>>(),
           reason: 'List<String> expected, got $result of ${result.runtimeType}',
         );
         expect(result, ['C', 'D']);
@@ -537,8 +539,8 @@ void main() {
           throwsA(
             predicate(
               (e) => '$e'.contains(''
-                  'No provider found for $MissingService: '
-                  '$ExampleService3 -> $MissingService.'),
+                  'No provider found for $MissingService:\n  '
+                  '$ExampleService3 ->\n  $MissingService.'),
             ),
           ),
         );
@@ -550,8 +552,9 @@ void main() {
           throwsA(
             predicate(
               (e) => '$e'.contains(''
-                  'No provider found for $MissingService: '
-                  '$ExampleService4 -> $ExampleService3 -> $MissingService.'),
+                  'No provider found for $MissingService:\n  '
+                  '$ExampleService4 ->\n  $ExampleService3 ->\n  '
+                  '$MissingService.'),
             ),
           ),
         );
@@ -571,7 +574,7 @@ void main() {
       test('should support Module', () {
         expect(
           exampleFromModule().get(ExampleService),
-          const isInstanceOf<ExampleService2>(),
+          const TypeMatcher<ExampleService2>(),
         );
       });
 
@@ -605,10 +608,7 @@ class CaptureInjectInjector extends Injector {
   Object lastOrElse;
 
   @override
-  T inject<T>(Object token) => injectOptionalUntyped(token);
-
-  @override
-  Object injectOptionalUntyped(Object token, [Object orElse]) {
+  Object provideUntyped(Object token, [Object orElse]) {
     lastToken = token;
     lastOrElse = orElse;
     return null;
@@ -807,8 +807,8 @@ const topLevelProvider = ValueProvider(TestConstNamedArgs2, topLevelValue);
 ])
 final InjectorFactory valueProviderExamples = ng.valueProviderExamples$Injector;
 
-const duplicateToken = const OpaqueToken<String>('duplicateToken');
-const duplicateMulti = const MultiToken<String>('duplicateMulti');
+const duplicateToken = OpaqueToken<String>('duplicateToken');
+const duplicateMulti = MultiToken<String>('duplicateMulti');
 
 @GenerateInjector([
   ValueProvider.forToken(duplicateToken, 'A'),
